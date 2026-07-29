@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.entities import (
     AuditLog, CashierShift, Category, Customer, CustomerPayment, DocumentStatus, PaymentMethod,
-    Product, Purchase, PurchaseItem, Sale, SaleItem, Supplier, User,
+    Product, Purchase, PurchaseItem, Sale, SaleItem, SalePaymentLine, Supplier, User,
 )
 
 
@@ -127,30 +127,57 @@ def payment_method_breakdown(
     from_date: date | None = None,
     to_date: date | None = None,
 ) -> list[dict]:
+    """Money collected per real tender (cash/card/check/credit) in the date
+    range. A split-payment sale (Sale.payment_method == "mixed") is never its
+    own bucket here — its total is distributed across its actual
+    SalePaymentLine rows, so "mixed" never appears in the result. Sales with
+    no payment lines at all (pure-credit sales, or rows predating the
+    split-payment feature) fall back to their whole Sale.total under
+    Sale.payment_method, same as before this changed.
+    """
     today = datetime.now(UTC).date()
     from_date = from_date or today - timedelta(days=30)
     to_date = to_date or today
-    rows = database.execute(
+    date_filters = (
+        Sale.status == DocumentStatus.COMPLETED,
+        func.date(Sale.created_at) >= from_date,
+        func.date(Sale.created_at) <= to_date,
+    )
+
+    # Sales that recorded actual tender lines: split by real payment method.
+    line_rows = database.execute(
+        select(
+            SalePaymentLine.method,
+            func.coalesce(func.sum(SalePaymentLine.amount), 0),
+            func.count(SalePaymentLine.id),
+        )
+        .join(Sale, Sale.id == SalePaymentLine.sale_id)
+        .where(*date_filters)
+        .group_by(SalePaymentLine.method)
+    ).all()
+
+    # Sales with no payment lines (pure credit, or pre-split-payment legacy
+    # rows): bucket the whole total under Sale.payment_method.
+    lineless_rows = database.execute(
         select(
             Sale.payment_method,
             func.coalesce(func.sum(Sale.total), 0),
             func.count(Sale.id),
         )
-        .where(
-            Sale.status == DocumentStatus.COMPLETED,
-            func.date(Sale.created_at) >= from_date,
-            func.date(Sale.created_at) <= to_date,
-        )
+        .where(*date_filters, Sale.id.notin_(select(SalePaymentLine.sale_id)))
         .group_by(Sale.payment_method)
-        .order_by(func.sum(Sale.total).desc())
     ).all()
+
+    totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+    counts: dict[str, int] = defaultdict(int)
+    for method, total, count in [*line_rows, *lineless_rows]:
+        key = method.value if hasattr(method, "value") else method
+        totals[key] += total
+        counts[key] += count
+
     return [
-        {
-            "payment_method": row[0],
-            "total": row[1],
-            "transaction_count": row[2],
-        }
-        for row in rows
+        {"payment_method": key, "total": totals[key], "transaction_count": counts[key]}
+        for key in sorted(totals, key=lambda k: totals[k], reverse=True)
     ]
 
 
@@ -290,7 +317,28 @@ def cashier_performance(
         .group_by(CashierShift.cashier_id, User.full_name)
     ).all()
 
-    method_rows = database.execute(
+    # Same "split by actual tender, fall back to Sale.payment_method for
+    # lineless sales" logic as reports.payment_method_breakdown() (see there
+    # for why), just also grouped by cashier. Kept as a separate query rather
+    # than calling that function because this one needs the CashierShift
+    # join for per-cashier grouping.
+    method_line_rows = database.execute(
+        select(
+            CashierShift.cashier_id,
+            SalePaymentLine.method,
+            func.coalesce(func.sum(SalePaymentLine.amount), 0),
+        )
+        .select_from(SalePaymentLine)
+        .join(Sale, Sale.id == SalePaymentLine.sale_id)
+        .join(CashierShift, Sale.shift_id == CashierShift.id)
+        .where(
+            Sale.status == DocumentStatus.COMPLETED,
+            func.date(Sale.created_at) >= from_date,
+            func.date(Sale.created_at) <= to_date,
+        )
+        .group_by(CashierShift.cashier_id, SalePaymentLine.method)
+    ).all()
+    method_lineless_rows = database.execute(
         select(
             CashierShift.cashier_id,
             Sale.payment_method,
@@ -302,12 +350,15 @@ def cashier_performance(
             Sale.status == DocumentStatus.COMPLETED,
             func.date(Sale.created_at) >= from_date,
             func.date(Sale.created_at) <= to_date,
+            Sale.id.notin_(select(SalePaymentLine.sale_id)),
         )
         .group_by(CashierShift.cashier_id, Sale.payment_method)
     ).all()
     breakdown_by_cashier: dict[int, dict[str, Decimal]] = defaultdict(dict)
-    for cashier_id, method, total in method_rows:
-        breakdown_by_cashier[cashier_id][str(method.value if hasattr(method, "value") else method)] = total
+    for cashier_id, method, total in [*method_line_rows, *method_lineless_rows]:
+        key = method.value if hasattr(method, "value") else method
+        per_cashier = breakdown_by_cashier[cashier_id]
+        per_cashier[key] = per_cashier.get(key, Decimal("0")) + total
 
     # Held/edited/discarded counts: joined through the sale each audit entry
     # refers to, then through that sale's shift — NOT through

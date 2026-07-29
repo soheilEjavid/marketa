@@ -365,9 +365,13 @@ class SalePaymentLine(Base, TimestampMixin):
     For a customer-linked sale, the same money is also recorded as a
     CustomerPayment (drives customer.balance + loyalty earning) — this
     table exists purely for the cash/card/check breakdown used by shift
-    cash reconciliation (see services/shifts.py::close_shift), so a
+    cash reconciliation (see services/shifts.py::close_shift) and by
+    reports.payment_method_breakdown()/cashier_performance(), so a
     customer sale's paid amount is intentionally tracked in both places,
-    each for its own job.
+    each for its own job. This is NOT a bug to "deduplicate" later — never
+    sum CustomerPayment and SalePaymentLine together for the same sale, that
+    would double-count the money; each table must only ever be totalled on
+    its own.
     """
 
     __tablename__ = "sale_payment_lines"
