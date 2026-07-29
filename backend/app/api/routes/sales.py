@@ -17,7 +17,11 @@ async def create_sale(
     current_user: UserModel = Depends(require_role("admin", "cashier", "manager")),
 ):
     try:
-        sale = sale_service.process_sale(database, data)
+        # allow_credit_override is only honored when the authenticated
+        # caller's own role (from the JWT, not the request body) is
+        # admin/manager — a cashier sending the flag has no effect.
+        credit_override_authorized = data.allow_credit_override and current_user.role in ("admin", "manager")
+        sale = sale_service.process_sale(database, data, credit_override_authorized=credit_override_authorized)
         record_audit(
             database,
             user_id=current_user.id,
@@ -34,6 +38,17 @@ async def create_sale(
         raise HTTPException(status_code=409, detail=str(error)) from error
     except sale_service.DuplicateInvoiceError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
+    except sale_service.CreditLimitExceededError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "credit_limit_exceeded",
+                "message": str(error),
+                "current_balance": str(error.current_balance),
+                "credit_limit": str(error.credit_limit),
+                "credit_portion": str(error.credit_portion),
+            },
+        ) from error
     except sale_service.SaleError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 

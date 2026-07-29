@@ -185,6 +185,14 @@ export type DualPriceRequiredResponse = {
   }>;
 };
 
+export type CreditLimitExceededResponse = {
+  code: "credit_limit_exceeded";
+  message: string;
+  current_balance: string;
+  credit_limit: string;
+  credit_portion: string;
+};
+
 /** Error thrown by `request()`. Carries the structured dual-price-required
  * payload (code + products) when the API responds with that specific 409,
  * plus the raw HTTP status so callers can distinguish "no permission"
@@ -194,16 +202,27 @@ export class ApiError extends Error {
   code?: string;
   status?: number;
   products?: DualPriceRequiredResponse["products"];
+  creditInfo?: {
+    currentBalance: number;
+    creditLimit: number;
+    creditPortion: number;
+  };
 
   constructor(
     message: string,
-    extra?: { code?: string; status?: number; products?: DualPriceRequiredResponse["products"] },
+    extra?: {
+      code?: string;
+      status?: number;
+      products?: DualPriceRequiredResponse["products"];
+      creditInfo?: ApiError["creditInfo"];
+    },
   ) {
     super(message);
     this.name = "ApiError";
     this.code = extra?.code;
     this.status = extra?.status;
     this.products = extra?.products;
+    this.creditInfo = extra?.creditInfo;
   }
 }
 
@@ -587,11 +606,22 @@ async function rawFetch(url: string, options?: RequestInit): Promise<Response> {
 
   if (!response.ok) {
     const error = (await response.json().catch(() => null)) as {
-      detail?: string | DualPriceRequiredResponse;
+      detail?: string | DualPriceRequiredResponse | CreditLimitExceededResponse;
     } | null;
     const detail = error?.detail;
     if (detail && typeof detail === "object" && detail.code === "dual_price_required") {
       throw new ApiError(detail.message, { code: detail.code, status: response.status, products: detail.products });
+    }
+    if (detail && typeof detail === "object" && detail.code === "credit_limit_exceeded") {
+      throw new ApiError(detail.message, {
+        code: detail.code,
+        status: response.status,
+        creditInfo: {
+          currentBalance: Number(detail.current_balance),
+          creditLimit: Number(detail.credit_limit),
+          creditPortion: Number(detail.credit_portion),
+        },
+      });
     }
     throw new ApiError(typeof detail === "string" ? detail : "Request failed", { status: response.status });
   }

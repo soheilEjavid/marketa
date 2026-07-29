@@ -29,6 +29,8 @@ export const canManageSuppliers = (role: string) => has(role, ["admin", "manager
 export const canManageCategories = (role: string) => has(role, ["admin", "manager"]);
 // customers.py/suppliers.py payments: admin,cashier,manager,accountant
 export const canRecordPayments = (role: string) => has(role, ["admin", "cashier", "manager", "accountant"]);
+// sales.py: allow_credit_override past a customer's credit_limit = admin,manager
+export const canOverrideCreditLimit = (role: string) => has(role, ["admin", "manager"]);
 // adjustments.py stock/purchase-return: admin,inventory_manager
 export const canAdjustStock = (role: string) => has(role, ["admin", "inventory_manager"]);
 // checks.py READ_ROLES: admin,inventory_manager,manager,accountant (no cashier)

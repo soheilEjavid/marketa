@@ -299,6 +299,9 @@ export type SaleCreate = {
   notes?: string | null;
   items: SaleItemCreate[];
   redeem_points?: number;
+  /** Only honored server-side if the caller is admin/manager — see the
+   * credit-limit-exceeded retry flow in Sales.tsx. */
+  allow_credit_override?: boolean;
 };
 
 /**

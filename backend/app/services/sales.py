@@ -45,6 +45,21 @@ class DuplicateInvoiceError(SaleError):
     pass
 
 
+class CreditLimitExceededError(SaleError):
+    """Raised when completing a sale would push a customer's balance past
+    their credit_limit, and no valid admin/manager override was supplied."""
+
+    def __init__(self, *, current_balance: Decimal, credit_limit: Decimal, credit_portion: Decimal) -> None:
+        self.current_balance = current_balance
+        self.credit_limit = credit_limit
+        self.credit_portion = credit_portion
+        super().__init__(
+            f"This sale would exceed the customer's credit limit: current balance "
+            f"{current_balance}, credit limit {credit_limit}, credit portion of this "
+            f"sale {credit_portion}"
+        )
+
+
 def _invoice_number() -> str:
     date_part = datetime.now(UTC).strftime("%Y%m%d")
     return f"SAL-{date_part}-{uuid4().hex[:8].upper()}"
@@ -176,7 +191,7 @@ def _add_sale_payment_line(
     )
 
 
-def process_sale(database: Session, data: SaleCreate) -> Sale:
+def process_sale(database: Session, data: SaleCreate, *, credit_override_authorized: bool = False) -> Sale:
     requested_quantities: dict[int, Decimal] = defaultdict(Decimal)
     for item in data.items:
         requested_quantities[item.product_id] += item.quantity
@@ -214,6 +229,9 @@ def process_sale(database: Session, data: SaleCreate) -> Sale:
         # can flip it, so the caller can tell whether *this* sale is what
         # crossed the membership threshold (see routes/sales.py).
         was_loyalty_member = customer.loyalty_member if customer else False
+        # Captured before customer.balance += sale.total below, so the
+        # credit-limit check can report the pre-sale balance in its error.
+        balance_before_sale = customer.balance if customer else Decimal("0")
 
         open_shift = get_open_shift(database)
 
@@ -312,6 +330,21 @@ def process_sale(database: Session, data: SaleCreate) -> Sale:
             sale.payment_status = payment_status(sale.total, initial_paid)
             if initial_paid > 0 and data.payment_method in _REAL_TENDER_METHODS:
                 _add_sale_payment_line(database, sale, method=data.payment_method, amount=initial_paid)
+
+        # Credit-limit enforcement — only sales that leave a real unpaid
+        # portion on a customer's account can trip this; cash/card-only
+        # sales (remaining_amount == 0) are never affected. customer.balance
+        # here already equals balance_before_sale + sale.remaining_amount,
+        # since every payment/redemption branch above has already reduced it
+        # by whatever was actually tendered.
+        if customer and sale.remaining_amount > 0:
+            limit = customer.credit_limit
+            if limit and limit > 0 and customer.balance > limit and not credit_override_authorized:
+                raise CreditLimitExceededError(
+                    current_balance=balance_before_sale,
+                    credit_limit=limit,
+                    credit_portion=sale.remaining_amount,
+                )
 
         database.commit()
     except IntegrityError as error:

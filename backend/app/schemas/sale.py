@@ -64,6 +64,11 @@ class SaleCreate(BaseModel):
     # کالای وفاداری: how many loyalty points the customer wants to redeem
     # against this invoice — see services/loyalty.py for the cap/validation.
     redeem_points: int = Field(default=0, ge=0)
+    # Requests proceeding past a customer's credit_limit. Only actually
+    # honored if the authenticated caller is admin/manager — the route
+    # re-derives that from the JWT role, never trusts this flag alone (see
+    # services/sales.py::CreditLimitExceededError).
+    allow_credit_override: bool = False
 
 
 class SaleItemRead(BaseModel):

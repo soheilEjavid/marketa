@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 
 import {
+  ApiError,
   createSale,
   discardSale,
   getCustomers,
@@ -26,11 +27,14 @@ import {
   resumeSale,
 } from "../api";
 import { useI18n } from "../i18n";
+import { canOverrideCreditLimit } from "../permissions";
+import { getSession } from "../session";
 import type { Customer, LoyaltyBalance, Product, Sale, SalePaymentMethod } from "../types";
 import { CashierShiftBar } from "../components/CashierShiftBar";
 import { CustomerCombobox } from "../components/CustomerCombobox";
 import { HeldSalesTab } from "../components/HeldSalesTab";
 import { JalaliDatePicker } from "../components/JalaliDatePicker";
+import { Modal } from "../components/Modal";
 import { PostCheckoutLoyaltyPrompt, type PostCheckoutLoyaltyPrompt as PostCheckoutLoyaltyPromptType } from "../components/PostCheckoutLoyaltyPrompt";
 import { QuickAddLoyaltyCustomerButton } from "../components/QuickAddLoyaltyCustomerButton";
 import { ReceiptView, type ReceiptData } from "../components/ReceiptView";
@@ -97,6 +101,8 @@ export function Sales() {
    * convention elsewhere in the loyalty program. */
   const [minInvoiceTotalForMembership, setMinInvoiceTotalForMembership] = useState<number | null>(null);
   const [loyaltyPrompt, setLoyaltyPrompt] = useState<PostCheckoutLoyaltyPromptType | null>(null);
+  const [creditLimitError, setCreditLimitError] = useState<ApiError["creditInfo"] | null>(null);
+  const canOverride = canOverrideCreditLimit(getSession()?.role ?? "");
 
   useEffect(() => {
     Promise.all([getProducts(), getCustomers()])
@@ -276,7 +282,7 @@ export function Sales() {
     );
   }
 
-  async function checkout() {
+  async function checkout(options?: { creditOverride?: boolean }) {
     if (!cart.length) return;
     if (remainingAfterPayment > 0 && !customerId) {
       setStatus("error");
@@ -286,6 +292,7 @@ export function Sales() {
     if (paymentExceedsTotal || hasIncompleteCheckLine) return;
     setStatus("submitting");
     setMessage("");
+    setCreditLimitError(null);
     try {
       const activePaymentLines = paymentLines.filter((line) => line.amount > 0);
       const sale = await createSale({
@@ -318,6 +325,7 @@ export function Sales() {
         // backend explicitly so it doesn't fall back to its legacy
         // default (cash, for the whole amount) for this new-style request.
         ...(activePaymentLines.length === 0 ? { payment_method: "credit" as const, paid_amount: 0 } : {}),
+        ...(options?.creditOverride ? { allow_credit_override: true } : {}),
       });
 
       const customerName = customerId
@@ -374,6 +382,12 @@ export function Sales() {
         getCustomers().then(setCustomers).catch(() => {});
       }
     } catch (error) {
+      if (error instanceof ApiError && error.code === "credit_limit_exceeded" && error.creditInfo) {
+        setStatus("idle");
+        setMessage("");
+        setCreditLimitError(error.creditInfo);
+        return;
+      }
       setStatus("error");
       setMessage(error instanceof Error ? error.message : t("apiError"));
     }
@@ -918,13 +932,65 @@ export function Sales() {
                 hasIncompleteCheckLine ||
                 (remainingAfterPayment > 0 && !customerId)
               }
-              onClick={checkout}
+              onClick={() => checkout()}
             >
               {status === "submitting" ? t("loading") : t("checkout")}
             </button>
           </div>
         </aside>
       </section>
+      )}
+
+      {creditLimitError && (
+        <Modal onClose={() => setCreditLimitError(null)}>
+          <div
+            className="party-form"
+            style={{ width: "min(420px, 100%)" }}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="panel-heading">
+              <h2>{t("creditLimitExceededTitle")}</h2>
+              <button
+                className="icon-button"
+                onClick={() => setCreditLimitError(null)}
+                aria-label={t("cancel")}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p>{t("creditLimitExceededBody")}</p>
+
+            <div className="total-row">
+              <span>{t("creditLimitCurrentBalance")}</span>
+              <strong>{money(creditLimitError.currentBalance)}</strong>
+            </div>
+            <div className="total-row">
+              <span>{t("creditLimitLimit")}</span>
+              <strong>{money(creditLimitError.creditLimit)}</strong>
+            </div>
+            <div className="total-row">
+              <span>{t("creditLimitPortion")}</span>
+              <strong>{money(creditLimitError.creditPortion)}</strong>
+            </div>
+
+            {canOverride && <p className="muted-text">{t("creditLimitOverridePrompt")}</p>}
+
+            <div className="form-actions">
+              <button className="secondary-button" onClick={() => setCreditLimitError(null)}>
+                {t("cancel")}
+              </button>
+              {canOverride && (
+                <button
+                  className={`primary-button ${status === "submitting" ? "is-loading" : ""}`}
+                  onClick={() => checkout({ creditOverride: true })}
+                >
+                  {t("creditLimitOverrideConfirm")}
+                </button>
+              )}
+            </div>
+          </div>
+        </Modal>
       )}
     </main>
   );

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.models.base import Base
 from app.models.entities import Customer, Product, SalePaymentLine
 from app.schemas.sale import SaleCreate, SaleItemCreate, SalePaymentLineInput
-from app.services.sales import SaleError, process_sale, get_sale, list_sales
+from app.services.sales import CreditLimitExceededError, SaleError, process_sale, get_sale, list_sales
 
 
 def test_get_sale_returns_sale_with_items() -> None:
@@ -245,3 +245,135 @@ def test_multi_line_payment_validated_against_post_redemption_remainder() -> Non
                     payment_lines=[SalePaymentLineInput(method="cash", amount=Decimal("7001"))],
                 ),
             )
+
+
+def test_credit_sale_unlimited_when_credit_limit_is_zero() -> None:
+    """credit_limit defaults to 0, which must mean "no limit" -- a large
+    credit sale must go through regardless of amount."""
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as database:
+        product = _make_product(database, stock="2000")
+        customer = Customer(full_name="No Limit Customer")
+        database.add(customer)
+        database.commit()
+        database.refresh(customer)
+        assert customer.credit_limit == Decimal("0.00")
+
+        sale = process_sale(
+            database,
+            SaleCreate(
+                customer_id=customer.id,
+                items=[SaleItemCreate(product_id=product.id, quantity=Decimal("1000"))],
+                payment_method="credit",
+                paid_amount=Decimal("0"),
+            ),
+        )
+        assert sale.remaining_amount == Decimal("10000.00")
+        database.refresh(customer)
+        assert customer.balance == Decimal("10000.00")
+
+
+def test_credit_sale_under_limit_proceeds() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as database:
+        product = _make_product(database, stock="2000")
+        customer = Customer(full_name="Under Limit", credit_limit=Decimal("50000"))
+        database.add(customer)
+        database.commit()
+        database.refresh(customer)
+
+        sale = process_sale(
+            database,
+            SaleCreate(
+                customer_id=customer.id,
+                items=[SaleItemCreate(product_id=product.id, quantity=Decimal("1000"))],
+                payment_method="credit",
+                paid_amount=Decimal("0"),
+            ),
+        )
+        assert sale.remaining_amount == Decimal("10000.00")
+
+
+def test_credit_sale_exceeding_limit_rejected_without_override() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as database:
+        product = _make_product(database, stock="2000")
+        customer = Customer(full_name="Over Limit", credit_limit=Decimal("5000"))
+        database.add(customer)
+        database.commit()
+        database.refresh(customer)
+
+        with pytest.raises(CreditLimitExceededError) as excinfo:
+            process_sale(
+                database,
+                SaleCreate(
+                    customer_id=customer.id,
+                    items=[SaleItemCreate(product_id=product.id, quantity=Decimal("1000"))],
+                    payment_method="credit",
+                    paid_amount=Decimal("0"),
+                ),
+            )
+        assert excinfo.value.current_balance == Decimal("0.00")
+        assert excinfo.value.credit_limit == Decimal("5000.00")
+        assert excinfo.value.credit_portion == Decimal("10000.00")
+
+        # Rejected sale must be fully rolled back -- no phantom balance/stock effect.
+        database.refresh(customer)
+        assert customer.balance == Decimal("0.00")
+
+
+def test_credit_sale_exceeding_limit_proceeds_with_override() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as database:
+        product = _make_product(database, stock="2000")
+        customer = Customer(full_name="Over Limit Override", credit_limit=Decimal("5000"))
+        database.add(customer)
+        database.commit()
+        database.refresh(customer)
+
+        sale = process_sale(
+            database,
+            SaleCreate(
+                customer_id=customer.id,
+                items=[SaleItemCreate(product_id=product.id, quantity=Decimal("1000"))],
+                payment_method="credit",
+                paid_amount=Decimal("0"),
+            ),
+            credit_override_authorized=True,
+        )
+        assert sale.remaining_amount == Decimal("10000.00")
+        database.refresh(customer)
+        assert customer.balance == Decimal("10000.00")
+
+
+def test_cash_only_sale_unaffected_by_credit_limit_even_if_already_over() -> None:
+    """A sale with no credit portion (fully paid) must never be blocked by
+    this check, even if the customer's existing balance (from past unpaid
+    sales) is already past their credit_limit."""
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as database:
+        product = _make_product(database, stock="2000")
+        customer = Customer(full_name="Already Over", credit_limit=Decimal("100"), balance=Decimal("5000"))
+        database.add(customer)
+        database.commit()
+        database.refresh(customer)
+
+        sale = process_sale(
+            database,
+            SaleCreate(
+                customer_id=customer.id,
+                items=[SaleItemCreate(product_id=product.id, quantity=Decimal("1000"))],
+                payment_lines=[SalePaymentLineInput(method="cash", amount=Decimal("10000"))],
+            ),
+        )
+        assert sale.remaining_amount == Decimal("0.00")
