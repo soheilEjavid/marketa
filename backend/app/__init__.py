@@ -1,0 +1,1 @@
+"""MARKETA backend application."""

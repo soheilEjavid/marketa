@@ -1,0 +1,507 @@
+from datetime import date, datetime
+from decimal import Decimal
+from enum import StrEnum
+
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.models.base import Base, TimestampMixin
+
+
+class PaymentMethod(StrEnum):
+    CASH = "cash"
+    CARD = "card"
+    CREDIT = "credit"
+    MIXED = "mixed"
+    CHECK = "check"
+    # A CustomerPayment made by redeeming loyalty points rather than real
+    # money — see services/loyalty.py. Never used for Sale.payment_method
+    # or purchase-side payment lines, only CustomerPayment.method.
+    LOYALTY = "loyalty"
+
+
+class DocumentStatus(StrEnum):
+    DRAFT = "draft"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class PaymentStatus(StrEnum):
+    PAID = "paid"
+    PARTIAL = "partial"
+    UNPAID = "unpaid"
+
+
+class ShiftStatus(StrEnum):
+    OPEN = "open"
+    CLOSED = "closed"
+
+
+class CheckStatus(StrEnum):
+    """Manually-tracked status for چک (check) payment lines — there is no
+    bank integration, so this is only ever changed by a user action."""
+
+    PENDING = "pending"
+    CLEARED = "cleared"
+    BOUNCED = "bounced"
+
+
+class InventoryTransactionType(StrEnum):
+    PURCHASE = "purchase"
+    SALE = "sale"
+    ADJUSTMENT = "adjustment"
+
+
+class LoyaltyTransactionType(StrEnum):
+    """See services/loyalty.py for the full earning/redemption/expiry rules."""
+
+    EARN = "earn"
+    REDEEM = "redeem"
+    EXPIRE = "expire"
+    ADJUST = "adjust"
+
+
+class User(Base, TimestampMixin):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    full_name: Mapped[str] = mapped_column(String(120))
+    role: Mapped[str] = mapped_column(String(30), default="cashier")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Category(Base, TimestampMixin):
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(Text)
+
+    products: Mapped[list["Product"]] = relationship(back_populates="category")
+
+
+class Product(Base, TimestampMixin):
+    __tablename__ = "products"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    barcode: Mapped[str | None] = mapped_column(String(80), unique=True, index=True)
+    sku: Mapped[str | None] = mapped_column(String(60), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(160), index=True)
+    brand: Mapped[str | None] = mapped_column(String(100))
+    purchase_price: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    sale_price: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    min_sale_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    stock_quantity: Mapped[Decimal] = mapped_column(Numeric(14, 3), default=0)
+    low_stock_threshold: Mapped[Decimal] = mapped_column(Numeric(14, 3), default=0)
+    unit: Mapped[str | None] = mapped_column(String(30))
+    packaging_unit_label: Mapped[str | None] = mapped_column(String(40))
+    packaging_unit_quantity: Mapped[Decimal | None] = mapped_column(Numeric(14, 3))
+    image_url: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    expiration_date: Mapped[date | None] = mapped_column(Date)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"))
+    # Manager override of the automatic margin/dead-stock loyalty earn rate
+    # (see services/loyalty.py::_line_multiplier) — null means "let the
+    # automatic calculation decide"; 0 exempts this product from earning
+    # points entirely; any other value replaces the computed multiplier
+    # outright (the dead-stock boost is NOT layered on top of an override —
+    # a manual figure is the manager's final word).
+    loyalty_point_multiplier: Mapped[Decimal | None] = mapped_column(Numeric(6, 2))
+
+    # ── Dual-price fields ────────────────────────────────────────────────
+    is_dual_priced: Mapped[bool] = mapped_column(Boolean, default=False)
+    old_purchase_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    old_sale_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    old_price_stock_estimate: Mapped[int | None] = mapped_column(Integer)
+    dual_price_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    category: Mapped[Category | None] = relationship(back_populates="products")
+    sale_items: Mapped[list["SaleItem"]] = relationship(back_populates="product")
+    purchase_items: Mapped[list["PurchaseItem"]] = relationship(back_populates="product")
+    inventory_transactions: Mapped[list["InventoryTransaction"]] = relationship(
+        back_populates="product"
+    )
+
+
+class Customer(Base, TimestampMixin):
+    __tablename__ = "customers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    full_name: Mapped[str] = mapped_column(String(160), index=True)
+    phone: Mapped[str | None] = mapped_column(String(40), index=True)
+    national_id: Mapped[str | None] = mapped_column(
+        String(20), unique=True, index=True
+    )
+    address: Mapped[str | None] = mapped_column(Text)
+    credit_limit: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    notes: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    birth_date: Mapped[date | None] = mapped_column(Date)
+    # ── Loyalty program (باشگاه مشتریان) — see services/loyalty.py ────────
+    # Cached/denormalized current balance, kept in sync by loyalty.py the
+    # same way Product.stock_quantity is kept in sync by inventory writes —
+    # loyalty_point_transactions remains the append-only source of truth.
+    loyalty_points_balance: Mapped[int] = mapped_column(Integer, default=0)
+    # Toman progress not yet converted into a whole point (avoids losing
+    # fractional value across several small partial payments).
+    loyalty_progress_toman: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    # Gate for the manager-configurable auto-enrollment threshold (see
+    # services/loyalty.py). Pre-existing customers are grandfathered to
+    # True by the migration that adds this column, since the original
+    # design had everyone earning points already; new customers start
+    # False and flip to True the moment a sale qualifies under
+    # LoyaltySettings — or immediately, if no threshold is configured.
+    loyalty_member: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    sales: Mapped[list["Sale"]] = relationship(back_populates="customer")
+    payments: Mapped[list["CustomerPayment"]] = relationship(back_populates="customer")
+    loyalty_transactions: Mapped[list["LoyaltyPointTransaction"]] = relationship(
+        back_populates="customer", order_by="LoyaltyPointTransaction.created_at"
+    )
+
+
+class Supplier(Base, TimestampMixin):
+    __tablename__ = "suppliers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(160), index=True)
+    contact_person: Mapped[str | None] = mapped_column(String(120))
+    phone: Mapped[str | None] = mapped_column(String(40))
+    address: Mapped[str | None] = mapped_column(Text)
+    credit_limit: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    last_purchase_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    notes: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    purchases: Mapped[list["Purchase"]] = relationship(back_populates="supplier")
+    payments: Mapped[list["SupplierPayment"]] = relationship(back_populates="supplier")
+
+
+class Sale(Base, TimestampMixin):
+    __tablename__ = "sales"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    invoice_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    customer_id: Mapped[int | None] = mapped_column(ForeignKey("customers.id"))
+    subtotal: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    discount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    total: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    paid_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    remaining_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    payment_status: Mapped[PaymentStatus] = mapped_column(
+        Enum(PaymentStatus), default=PaymentStatus.UNPAID
+    )
+    payment_method: Mapped[PaymentMethod] = mapped_column(
+        Enum(PaymentMethod), default=PaymentMethod.CASH
+    )
+    status: Mapped[DocumentStatus] = mapped_column(
+        Enum(DocumentStatus), default=DocumentStatus.DRAFT
+    )
+    notes: Mapped[str | None] = mapped_column(Text)
+    # Auto-attached to whichever CashierShift is OPEN at creation time (see
+    # services/sales.py) — null if no shift was open, e.g. before this
+    # feature existed or if the cashier forgot to open one.
+    shift_id: Mapped[int | None] = mapped_column(ForeignKey("cashier_shifts.id"), index=True)
+
+    customer: Mapped[Customer | None] = relationship(back_populates="sales")
+    items: Mapped[list["SaleItem"]] = relationship(
+        back_populates="sale", cascade="all, delete-orphan"
+    )
+    payments: Mapped[list["Payment"]] = relationship(
+        back_populates="sale", cascade="all, delete-orphan"
+    )
+    customer_payments: Mapped[list["CustomerPayment"]] = relationship(back_populates="sale")
+    payment_lines: Mapped[list["SalePaymentLine"]] = relationship(
+        back_populates="sale", order_by="SalePaymentLine.paid_at, SalePaymentLine.id"
+    )
+    shift: Mapped["CashierShift | None"] = relationship(back_populates="sales")
+
+
+class SaleItem(Base):
+    __tablename__ = "sale_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sale_id: Mapped[int] = mapped_column(ForeignKey("sales.id"))
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(14, 3))
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    cost_price: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    discount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    line_total: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    price_tier: Mapped[str | None] = mapped_column(String(10))
+
+    sale: Mapped[Sale] = relationship(back_populates="items")
+    product: Mapped[Product] = relationship(back_populates="sale_items")
+
+
+class Purchase(Base, TimestampMixin):
+    __tablename__ = "purchases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    invoice_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id"))
+    total: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    paid_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    remaining_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    payment_status: Mapped[PaymentStatus] = mapped_column(
+        Enum(PaymentStatus), default=PaymentStatus.UNPAID
+    )
+    status: Mapped[DocumentStatus] = mapped_column(
+        Enum(DocumentStatus), default=DocumentStatus.DRAFT
+    )
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    supplier: Mapped[Supplier | None] = relationship(back_populates="purchases")
+    items: Mapped[list["PurchaseItem"]] = relationship(
+        back_populates="purchase", cascade="all, delete-orphan"
+    )
+    payments: Mapped[list["Payment"]] = relationship(
+        back_populates="purchase", cascade="all, delete-orphan"
+    )
+    payment_lines: Mapped[list["SupplierPayment"]] = relationship(
+        back_populates="purchase", order_by="SupplierPayment.paid_at, SupplierPayment.id"
+    )
+
+
+class PurchaseItem(Base):
+    __tablename__ = "purchase_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    purchase_id: Mapped[int] = mapped_column(ForeignKey("purchases.id"))
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"))
+    quantity: Mapped[Decimal] = mapped_column(Numeric(14, 3))
+    unit_cost: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    selling_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    expiry_date: Mapped[date | None] = mapped_column(Date)
+    line_total: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    # کالای امانی (consignment): goods physically received and already
+    # counted into stock, but with no defined payment obligation yet — see
+    # services/purchases.py. False/None for every normal purchase line.
+    is_consignment: Mapped[bool] = mapped_column(Boolean, default=False)
+    consignment_settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    purchase: Mapped[Purchase] = relationship(back_populates="items")
+    product: Mapped[Product] = relationship(back_populates="purchase_items")
+
+
+class Payment(Base, TimestampMixin):
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    method: Mapped[PaymentMethod] = mapped_column(Enum(PaymentMethod))
+    reference: Mapped[str | None] = mapped_column(String(120))
+    sale_id: Mapped[int | None] = mapped_column(ForeignKey("sales.id"))
+    purchase_id: Mapped[int | None] = mapped_column(ForeignKey("purchases.id"))
+
+    sale: Mapped[Sale | None] = relationship(back_populates="payments")
+    purchase: Mapped[Purchase | None] = relationship(back_populates="payments")
+
+
+class CustomerPayment(Base, TimestampMixin):
+    __tablename__ = "customer_payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"), index=True)
+    sale_id: Mapped[int | None] = mapped_column(ForeignKey("sales.id"), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    method: Mapped[PaymentMethod] = mapped_column(Enum(PaymentMethod))
+    reference: Mapped[str | None] = mapped_column(String(120))
+    notes: Mapped[str | None] = mapped_column(Text)
+    paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    customer: Mapped[Customer] = relationship(back_populates="payments")
+    sale: Mapped[Sale | None] = relationship(back_populates="customer_payments")
+
+
+class SupplierPayment(Base, TimestampMixin):
+    __tablename__ = "supplier_payments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Nullable: a purchase may have no supplier on file (walk-in purchase),
+    # in which case its payment lines still need to be recorded, just with
+    # no party ledger to post against.
+    supplier_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id"), index=True)
+    purchase_id: Mapped[int | None] = mapped_column(ForeignKey("purchases.id"), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    method: Mapped[PaymentMethod] = mapped_column(Enum(PaymentMethod))
+    reference: Mapped[str | None] = mapped_column(String(120))
+    notes: Mapped[str | None] = mapped_column(Text)
+    # ── چک (check) details — only populated when method == CHECK ──────────
+    check_number: Mapped[str | None] = mapped_column(String(60))
+    check_bank_name: Mapped[str | None] = mapped_column(String(120))
+    check_due_date: Mapped[date | None] = mapped_column(Date, index=True)
+    # Only meaningful when method == CHECK; null for cash/card lines.
+    check_status: Mapped[CheckStatus | None] = mapped_column(Enum(CheckStatus))
+    paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    supplier: Mapped[Supplier | None] = relationship(back_populates="payments")
+    purchase: Mapped[Purchase | None] = relationship(back_populates="payment_lines")
+
+
+class SalePaymentLine(Base, TimestampMixin):
+    """One cash/card/check payment line against a sale — mirrors
+    SupplierPayment's role on the purchase side. Unlike SupplierPayment,
+    `sale_id` is never null: there's no "standalone sale payment" concept
+    equivalent to a supplier balance settlement (that's CustomerPayment with
+    sale_id=None, unchanged by this table).
+
+    For a customer-linked sale, the same money is also recorded as a
+    CustomerPayment (drives customer.balance + loyalty earning) — this
+    table exists purely for the cash/card/check breakdown used by shift
+    cash reconciliation (see services/shifts.py::close_shift), so a
+    customer sale's paid amount is intentionally tracked in both places,
+    each for its own job.
+    """
+
+    __tablename__ = "sale_payment_lines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sale_id: Mapped[int] = mapped_column(ForeignKey("sales.id"), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    method: Mapped[PaymentMethod] = mapped_column(Enum(PaymentMethod))
+    reference: Mapped[str | None] = mapped_column(String(120))
+    notes: Mapped[str | None] = mapped_column(Text)
+    # ── چک (check) details — only populated when method == CHECK ──────────
+    check_number: Mapped[str | None] = mapped_column(String(60))
+    check_bank_name: Mapped[str | None] = mapped_column(String(120))
+    check_due_date: Mapped[date | None] = mapped_column(Date, index=True)
+    check_status: Mapped[CheckStatus | None] = mapped_column(Enum(CheckStatus))
+    paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    sale: Mapped["Sale"] = relationship(back_populates="payment_lines")
+
+
+class CashierShift(Base, TimestampMixin):
+    """A till session: opened by picking a cashier + starting cash float,
+    closed with a counted-cash reconciliation. There is no real login yet
+    (see services/auth.py's DEV_DISABLE_AUTH), so `cashier_id` here — not
+    any request-level identity — is the single source of truth for "who is
+    working the register." Only one shift may be OPEN at a time (enforced
+    in services/shifts.py, not at the DB level, matching this codebase's
+    existing style of Python-level business-rule checks).
+    """
+
+    __tablename__ = "cashier_shifts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cashier_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    status: Mapped[ShiftStatus] = mapped_column(Enum(ShiftStatus), default=ShiftStatus.OPEN, index=True)
+    opening_cash: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    closing_cash: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    expected_cash: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    difference: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    cashier: Mapped["User"] = relationship()
+    sales: Mapped[list["Sale"]] = relationship(back_populates="shift")
+
+
+class AuditLog(Base, TimestampMixin):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    username: Mapped[str | None] = mapped_column(String(80))
+    action: Mapped[str] = mapped_column(String(50), index=True)
+    entity_type: Mapped[str] = mapped_column(String(50))
+    entity_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    details: Mapped[str | None] = mapped_column(Text)
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
+class InventoryTransaction(Base):
+    __tablename__ = "inventory_transactions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id"), index=True)
+    quantity_change: Mapped[Decimal] = mapped_column(Numeric(14, 3))
+    transaction_type: Mapped[InventoryTransactionType] = mapped_column(
+        Enum(InventoryTransactionType)
+    )
+    related_id: Mapped[int | None] = mapped_column(Integer, index=True)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+    product: Mapped[Product] = relationship(back_populates="inventory_transactions")
+
+
+class LoyaltyPointTransaction(Base, TimestampMixin):
+    """Append-only ledger for the loyalty points program — see
+    services/loyalty.py. `points` is signed: positive for EARN/ADJUST-up,
+    negative for REDEEM/EXPIRE/ADJUST-down. `expires_at` is only set on
+    EARN rows (used by the lazy expiry sweep); `sale_id` links an
+    EARN/REDEEM row to the sale that generated it, when there is one.
+    """
+
+    __tablename__ = "loyalty_point_transactions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    customer_id: Mapped[int] = mapped_column(ForeignKey("customers.id"), index=True)
+    points: Mapped[int] = mapped_column(Integer)
+    transaction_type: Mapped[LoyaltyTransactionType] = mapped_column(Enum(LoyaltyTransactionType))
+    sale_id: Mapped[int | None] = mapped_column(ForeignKey("sales.id"), index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    expired: Mapped[bool] = mapped_column(Boolean, default=False)
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer)
+
+    customer: Mapped[Customer] = relationship(back_populates="loyalty_transactions")
+
+
+class LoyaltySettings(Base, TimestampMixin):
+    """Single-row (id=1) manager-tunable loyalty configuration — everything
+    that shouldn't require a code change/redeploy to adjust, unlike the
+    constants in services/loyalty.py. NULL thresholds mean "disabled":
+    every customer is an automatic member from their very first
+    points-earning sale, matching the program's original design.
+    """
+
+    __tablename__ = "loyalty_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    min_invoice_total_for_membership: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    min_invoice_profit_for_membership: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    # Spend thresholds for the silver/gold customer tiers (see
+    # services/loyalty.py::customer_tier) — null disables that tier.
+    # Bronze is the implicit base tier and needs no threshold.
+    tier_silver_min_spend: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    tier_gold_min_spend: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    # How far back tier spend is measured, in days. Null (the default)
+    # keeps the original all-time/lifetime behavior; a manager can set e.g.
+    # 180 so a customer who bought a lot two years ago but hasn't been back
+    # since isn't still classified gold today.
+    tier_window_days: Mapped[int | None] = mapped_column(Integer)
+    # Multiplicative bonus applied on top of a sale's whole computed earn
+    # value for silver/gold-tier customers (e.g. 1.1 = +10%) — see
+    # services/loyalty.py::_tier_earn_bonus. Null = no bonus (1x). Bronze
+    # never gets a bonus; it's the base tier.
+    tier_silver_earn_bonus: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
+    tier_gold_earn_bonus: Mapped[Decimal | None] = mapped_column(Numeric(4, 2))
+    # Bonus points auto-granted to a churn-risk customer when a
+    # manager triggers issue_churn_recovery_coupons() — null/0 disables
+    # the feature (see services/loyalty.py).
+    churn_recovery_coupon_points: Mapped[int | None] = mapped_column(Integer)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer)
+
