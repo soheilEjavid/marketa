@@ -2498,6 +2498,10 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
 .payment-lines-summary strong.overpaid {
   color: var(--danger);
 }
+.remaining-balance-hint {
+  color: var(--muted);
+  font-size: 11px;
+}
 
 /* Unmatched product inline actions */
 .unmatched-actions {

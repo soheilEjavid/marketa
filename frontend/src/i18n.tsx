@@ -424,6 +424,7 @@ const fa = {
   newSale: "فروش جدید",
   paidAmount: "پرداخت‌شده",
   remainingBalance: "مانده",
+  collectVia: "دریافت با",
   outOfStock: "ناموجود",
 
   // ── Dashboard: configurable charts ────────────────────────────────
@@ -965,6 +966,7 @@ const en: Record<string, string> = {
   newSale: "New Sale",
   paidAmount: "Paid",
   remainingBalance: "Remaining",
+  collectVia: "collect via",
   outOfStock: "Out of stock",
 
   // ── Dashboard: configurable charts (English) ──────────────────────

@@ -274,7 +274,7 @@ export type SaleItemCreate = {
   price_tier?: "old" | "new";
 };
 
-export type SalePaymentMethod = "cash" | "card" | "check";
+export type SalePaymentMethod = "cash" | "card";
 
 export type SalePaymentLineInput = {
   method: SalePaymentMethod;

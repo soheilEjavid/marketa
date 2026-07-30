@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.entities import CheckStatus, DocumentStatus, PaymentStatus, PaymentMethod
 
@@ -23,9 +23,17 @@ class SalePaymentLineInput(BaseModel):
     """One payment line on a sale — mirrors PurchasePaymentLineInput. A sale
     may have zero (fully on account), one, or several of these summing to at
     most the post-redemption remaining amount.
+
+    check is not a valid method here — this shop does not accept check
+    payments from customers. The check_* fields stay (services/sales.py
+    still reads them positionally when building each SalePaymentLine) but
+    are now always None in practice, since method can never be "check".
+    This is sale-side only: PaymentMethod.CHECK and CheckStatus are still
+    fully used on the purchase/supplier side (see SupplierPayment,
+    services/checks.py) and must not be touched.
     """
 
-    method: Literal["cash", "card", "check"]
+    method: Literal["cash", "card"]
     amount: Decimal = Field(gt=0)
     check_number: str | None = Field(default=None, max_length=60)
     check_bank_name: str | None = Field(default=None, max_length=120)
@@ -39,12 +47,6 @@ class SalePaymentLineInput(BaseModel):
             return None
         stripped = value.strip()
         return stripped or None
-
-    @model_validator(mode="after")
-    def require_due_date_for_check(self) -> "SalePaymentLineInput":
-        if self.method == "check" and self.check_due_date is None:
-            raise ValueError("Check payment lines require a due date")
-        return self
 
 
 class SaleCreate(BaseModel):

@@ -33,7 +33,6 @@ import type { Customer, LoyaltyBalance, Product, Sale, SalePaymentMethod } from 
 import { CashierShiftBar } from "../components/CashierShiftBar";
 import { CustomerCombobox } from "../components/CustomerCombobox";
 import { HeldSalesTab } from "../components/HeldSalesTab";
-import { JalaliDatePicker } from "../components/JalaliDatePicker";
 import { Modal } from "../components/Modal";
 import { PostCheckoutLoyaltyPrompt, type PostCheckoutLoyaltyPrompt as PostCheckoutLoyaltyPromptType } from "../components/PostCheckoutLoyaltyPrompt";
 import { QuickAddLoyaltyCustomerButton } from "../components/QuickAddLoyaltyCustomerButton";
@@ -161,9 +160,15 @@ export function Sales() {
   );
   const remainingAfterPayment = Math.max(0, total - paidTotal);
   const paymentExceedsTotal = paidTotal > total;
-  const hasIncompleteCheckLine = paymentLines.some(
-    (line) => line.method === "check" && (!line.checkDueDate || !line.checkNumber.trim()),
+  // Which single method (if any) all entered payment lines share so far —
+  // used to name the covering method for the remaining-balance hint below
+  // (e.g. "card entered -> remainder collected in cash"). Ambiguous once
+  // both methods are in use, so no suggestion is shown in that case.
+  const usedPaymentMethods = new Set(
+    paymentLines.filter((line) => line.amount > 0).map((line) => line.method),
   );
+  const suggestedRemainderMethod: PaymentLine["method"] | null =
+    usedPaymentMethods.size === 1 ? (usedPaymentMethods.has("card") ? "cash" : "card") : null;
 
   // Loyalty balance for the selected customer, re-fetched whenever the
   // customer or the cart total changes (the redemption cap depends on it).
@@ -194,7 +199,8 @@ export function Sales() {
   function addPaymentLine() {
     setPaymentLines((current) => [
       ...current,
-      { key: nextPaymentLineKey++, method: "cash", amount: 0, checkNumber: "", checkBankName: "", checkDueDate: "", notes: "" },
+      // Defaults to card — most purchases are made by card.
+      { key: nextPaymentLineKey++, method: "card", amount: 0, checkNumber: "", checkBankName: "", checkDueDate: "", notes: "" },
     ]);
   }
 
@@ -289,7 +295,7 @@ export function Sales() {
       setMessage(t("customerRequiredForCredit"));
       return;
     }
-    if (paymentExceedsTotal || hasIncompleteCheckLine) return;
+    if (paymentExceedsTotal) return;
     setStatus("submitting");
     setMessage("");
     setCreditLimitError(null);
@@ -312,13 +318,6 @@ export function Sales() {
         payment_lines: activePaymentLines.map((line) => ({
           method: line.method,
           amount: line.amount,
-          ...(line.method === "check"
-            ? {
-                check_number: line.checkNumber.trim() || null,
-                check_bank_name: line.checkBankName.trim() || null,
-                check_due_date: line.checkDueDate || null,
-              }
-            : {}),
           ...(line.notes.trim() ? { notes: line.notes.trim() } : {}),
         })),
         // Zero payment lines means "nothing tendered now" — tell the
@@ -819,7 +818,9 @@ export function Sales() {
             </div>
           )}
 
-          {/* Payment breakdown — split across cash/card/check lines, mirroring Purchases.tsx */}
+          {/* Payment breakdown — split across cash/card lines. No check option
+              here: this shop doesn't accept checks from customers. Purchases.tsx
+              still has cash/card/check for paying suppliers — untouched. */}
           <div className="payment-lines-panel">
             <div className="payment-lines-header">
               <span>
@@ -842,7 +843,6 @@ export function Sales() {
                 >
                   <option value="cash">{t("cash")}</option>
                   <option value="card">{t("card")}</option>
-                  <option value="check">{t("check")}</option>
                 </select>
                 <input
                   type="number"
@@ -852,27 +852,6 @@ export function Sales() {
                   placeholder={t("amount")}
                   onChange={(event) => updatePaymentLine(line.key, { amount: parseNumeric(event.target.value) })}
                 />
-                {line.method === "check" && (
-                  <>
-                    <input
-                      type="text"
-                      value={line.checkNumber}
-                      placeholder={t("checkNumber")}
-                      onChange={(event) => updatePaymentLine(line.key, { checkNumber: event.target.value })}
-                    />
-                    <input
-                      type="text"
-                      value={line.checkBankName}
-                      placeholder={t("checkBankName")}
-                      onChange={(event) => updatePaymentLine(line.key, { checkBankName: event.target.value })}
-                    />
-                    <JalaliDatePicker
-                      value={line.checkDueDate}
-                      onChange={(isoDate) => updatePaymentLine(line.key, { checkDueDate: isoDate })}
-                      placeholder={t("checkDueDate")}
-                    />
-                  </>
-                )}
                 <button
                   type="button"
                   className="icon-button danger"
@@ -892,6 +871,12 @@ export function Sales() {
                 <span>
                   {t("remainingBalance")}:{" "}
                   <strong className={paymentExceedsTotal ? "overpaid" : ""}>{money(remainingAfterPayment)}</strong>
+                  {remainingAfterPayment > 0 && suggestedRemainderMethod && (
+                    <small className="remaining-balance-hint">
+                      {" "}
+                      ({t("collectVia")} {t(suggestedRemainderMethod)})
+                    </small>
+                  )}
                 </span>
               </div>
             )}
@@ -929,7 +914,6 @@ export function Sales() {
                 !cart.length ||
                 status === "submitting" ||
                 paymentExceedsTotal ||
-                hasIncompleteCheckLine ||
                 (remainingAfterPayment > 0 && !customerId)
               }
               onClick={() => checkout()}
