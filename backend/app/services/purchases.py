@@ -20,7 +20,7 @@ from app.models.entities import (
     Purchase,
     PurchaseItem,
 )
-from app.schemas.purchase import PurchaseCreate, PurchaseEditRequest, PurchasePaymentLineInput
+from app.schemas.purchase import PurchaseCreate, PurchaseEditRequest, PurchaseItemCreate, PurchasePaymentLineInput
 from app.services.financials import payment_status
 from app.services.products import enable_dual_pricing
 
@@ -134,6 +134,26 @@ def _apply_dual_pricing(
                 )
 
 
+def _merge_duplicate_purchase_items(items: list[PurchaseItemCreate]) -> list[PurchaseItemCreate]:
+    """Mirrors sales._merge_duplicate_sale_items -- see there for the full
+    reasoning. Sums quantities for repeated product_id entries, keeping
+    every other field (unit_cost, selling_price, expiry_date, is_consignment,
+    and id when editing) from the first occurrence in submission order.
+    Must run before _check_dual_pricing_needed()/_build_purchase_items() so
+    neither sees the raw, unmerged duplicate lines.
+    """
+    merged: dict[int, PurchaseItemCreate] = {}
+    order: list[int] = []
+    for item in items:
+        if item.product_id in merged:
+            existing = merged[item.product_id]
+            merged[item.product_id] = existing.model_copy(update={"quantity": existing.quantity + item.quantity})
+        else:
+            merged[item.product_id] = item
+            order.append(item.product_id)
+    return [merged[product_id] for product_id in order]
+
+
 def _build_purchase_items(
     database: Session,
     purchase: Purchase,
@@ -224,6 +244,7 @@ def _purchase_item_snapshot(item: PurchaseItem) -> dict:
 
 
 def process_purchase(database: Session, data: PurchaseCreate) -> Purchase:
+    data.items = _merge_duplicate_purchase_items(data.items)
     product_ids = {item.product_id for item in data.items}
 
     try:
@@ -311,6 +332,7 @@ def edit_purchase(database: Session, purchase: Purchase, data: PurchaseEditReque
     if purchase.status == DocumentStatus.CANCELLED:
         raise PurchaseError("Cannot edit a cancelled purchase")
 
+    data.items = _merge_duplicate_purchase_items(data.items)
     old_items_by_id: dict[int, PurchaseItem] = {item.id: item for item in purchase.items}
     new_item_ids = {item.id for item in data.items if item.id is not None}
 

@@ -22,7 +22,7 @@ from app.models.entities import (
     SalePaymentLine,
 )
 from app.schemas.financial import PaymentCreate
-from app.schemas.sale import SaleCreate, SaleEditRequest, SalePaymentLineInput
+from app.schemas.sale import SaleCreate, SaleEditRequest, SaleItemCreate, SalePaymentLineInput
 from app.services.financials import payment_status, record_customer_payment
 from app.services.loyalty import REDEMPTION_CAP_PCT, LoyaltyError, award_points_for_payment, redeem_points
 from app.services.products import decrement_old_stock_estimate
@@ -92,6 +92,33 @@ def _resolve_price_tier(
         unit_price = item_data.unit_price or product.sale_price
 
     return unit_price, cost_price, price_tier
+
+
+def _merge_duplicate_sale_items(items: list[SaleItemCreate]) -> list[SaleItemCreate]:
+    """Two or more lines for the same product_id (scanning/selecting an item
+    twice in the UI, or a raw API request) must become one line with the
+    summed quantity, not two separate SaleItem rows -- see the "merge
+    duplicate lines" task. Every field other than quantity is kept from the
+    FIRST occurrence in submission order; this is the deterministic
+    tie-break for the rare case a raw request submits conflicting
+    unit_price/discount/price_tier for the same product (the UI always
+    merges before ever submitting, so this only matters for a direct API
+    call). A later duplicate's own `id` (on an edit) is simply dropped along
+    with the rest of that occurrence -- edit_sale()'s existing "old item
+    absent from the new list -> removed" path deletes that row, and since
+    stock deltas there are aggregated per product_id (not per item id), the
+    net stock effect is identical to updating it in place.
+    """
+    merged: dict[int, SaleItemCreate] = {}
+    order: list[int] = []
+    for item in items:
+        if item.product_id in merged:
+            existing = merged[item.product_id]
+            merged[item.product_id] = existing.model_copy(update={"quantity": existing.quantity + item.quantity})
+        else:
+            merged[item.product_id] = item
+            order.append(item.product_id)
+    return [merged[product_id] for product_id in order]
 
 
 def _build_sale_items(
@@ -192,6 +219,7 @@ def _add_sale_payment_line(
 
 
 def process_sale(database: Session, data: SaleCreate, *, credit_override_authorized: bool = False) -> Sale:
+    data.items = _merge_duplicate_sale_items(data.items)
     requested_quantities: dict[int, Decimal] = defaultdict(Decimal)
     for item in data.items:
         requested_quantities[item.product_id] += item.quantity
@@ -374,6 +402,10 @@ def hold_sale(database: Session, data: SaleCreate) -> Sale:
     only ever decremented once, through the one already-tested code path,
     with no changes to process_sale/edit_sale themselves.
     """
+    # Merged here too (not just in process_sale) so a duplicate can never
+    # slip through via hold -> resume -> checkout, and a held draft's own
+    # line list is never itself duplicated (see _merge_duplicate_sale_items).
+    data.items = _merge_duplicate_sale_items(data.items)
     product_ids = {item.product_id for item in data.items}
 
     try:
@@ -485,6 +517,7 @@ def edit_sale(database: Session, sale: Sale, data: SaleEditRequest) -> tuple[Sal
     if sale.status == DocumentStatus.CANCELLED:
         raise SaleError("Cannot edit a cancelled sale")
 
+    data.items = _merge_duplicate_sale_items(data.items)
     old_items_by_id: dict[int, SaleItem] = {item.id: item for item in sale.items}
     new_item_ids = {item.id for item in data.items if item.id is not None}
 

@@ -73,19 +73,27 @@ export function PurchaseEditForm({ purchase, onClose, onSaved }: PurchaseEditFor
   }
 
   function addLineForProduct(product: Product) {
-    setLines((current) => [
-      ...current,
-      {
-        key: nextKey++,
-        id: null,
-        productId: product.id,
-        productName: product.name,
-        quantity: 1,
-        unitCost: Number(product.purchase_price),
-        sellingPrice: Number(product.sale_price),
-        expiryDate: "",
-      },
-    ]);
+    setLines((current) => {
+      const existingIndex = current.findIndex((line) => line.productId === product.id);
+      if (existingIndex !== -1) {
+        return current.map((line, i) =>
+          i === existingIndex ? { ...line, quantity: line.quantity + 1 } : line,
+        );
+      }
+      return [
+        ...current,
+        {
+          key: nextKey++,
+          id: null,
+          productId: product.id,
+          productName: product.name,
+          quantity: 1,
+          unitCost: Number(product.purchase_price),
+          sellingPrice: Number(product.sale_price),
+          expiryDate: "",
+        },
+      ];
+    });
   }
 
   function addLine(productId: number) {

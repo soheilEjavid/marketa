@@ -21,16 +21,21 @@
   /*
    * Z-index scale (low → high)
    * ──────────────────────────
-   * --z-dropdown:      100    dropdowns, popovers, tooltips
    * --z-sticky-footer: 200    sticky purchase summary bar
    * --z-modal-backdrop: 800   modal backdrop overlay
    * --z-modal:          900   modal dialog content
-   * --z-toast:         1100   notification toasts
+   * --z-dropdown:       950   dropdowns/popovers/tooltips (portal-rendered
+   *                           to document.body, same as Modal's own
+   *                           portal target — must outrank --z-modal, since
+   *                           a combobox opened from inside an open modal
+   *                           (SaleEditForm, PurchaseEditForm, ...) is a
+   *                           real, common case, not just the base-page one)
+   * --z-toast:         1100   notification toasts — always topmost
    */
-  --z-dropdown: 100;
   --z-sticky-footer: 200;
   --z-modal-backdrop: 800;
   --z-modal: 900;
+  --z-dropdown: 950;
   --z-toast: 1100;
 
   /* Read by .app-shell's grid track below; toggled by Sidebar.tsx (see

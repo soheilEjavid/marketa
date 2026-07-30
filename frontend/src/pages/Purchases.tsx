@@ -255,14 +255,32 @@ export function Purchases() {
     );
   }
 
+  // If `productId` is already selected on a different row, merge into that
+  // row (sum quantities) and drop this row, rather than leaving two rows
+  // for the same product — mirrors the cart-merge behavior in Sales.tsx.
   function selectProduct(line: PurchaseLine, productId: number) {
     const product = products.find((item) => item.id === productId);
-    updateLine(line.key, {
-      productId,
-      unitCost: product ? Number(product.purchase_price) : 0,
-      sellingPrice: product ? Number(product.sale_price) : null,
-      // Once user manually selects a product, clear the unmatched flag
-      isUnmatched: false,
+    setLines((current) => {
+      const duplicate = current.find((item) => item.key !== line.key && item.productId === productId);
+      if (duplicate) {
+        return current
+          .map((item) =>
+            item.key === duplicate.key ? { ...item, quantity: item.quantity + line.quantity } : item,
+          )
+          .filter((item) => item.key !== line.key);
+      }
+      return current.map((item) =>
+        item.key === line.key
+          ? {
+              ...item,
+              productId,
+              unitCost: product ? Number(product.purchase_price) : 0,
+              sellingPrice: product ? Number(product.sale_price) : null,
+              // Once user manually selects a product, clear the unmatched flag
+              isUnmatched: false,
+            }
+          : item,
+      );
     });
   }
 

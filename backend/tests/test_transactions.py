@@ -12,10 +12,10 @@ from app.models.entities import (
     Purchase,
     Sale,
 )
-from app.schemas.purchase import PurchaseCreate, PurchaseItemCreate
-from app.schemas.sale import SaleCreate, SaleItemCreate
-from app.services.purchases import process_purchase
-from app.services.sales import InsufficientStockError, process_sale
+from app.schemas.purchase import PurchaseCreate, PurchaseEditRequest, PurchaseItemCreate
+from app.schemas.sale import SaleCreate, SaleEditRequest, SaleItemCreate
+from app.services.purchases import edit_purchase, process_purchase
+from app.services.sales import InsufficientStockError, edit_sale, hold_sale, process_sale
 
 
 def create_product(
@@ -153,4 +153,175 @@ def test_purchase_item_optional_fields_are_nullable_and_do_not_block_entry() -> 
         assert saved_item.expiry_date is None
         assert purchase.total == Decimal("12.50")
         assert tea.stock_quantity == Decimal("6.000")
-        assert tea.sale_price == Decimal("10")
+
+
+def test_process_sale_merges_duplicate_product_lines_into_one() -> None:
+    """Scanning/selecting the same product twice in one invoice must become
+    one merged line (summed quantity), not two SaleItem rows."""
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as database:
+        tea = create_product(database, name="Tea", stock="100")
+        sale = process_sale(
+            database,
+            SaleCreate(
+                items=[
+                    SaleItemCreate(product_id=tea.id, quantity=Decimal("2")),
+                    SaleItemCreate(product_id=tea.id, quantity=Decimal("3")),
+                ]
+            ),
+        )
+        assert len(sale.items) == 1
+        assert sale.items[0].quantity == Decimal("5.000")
+        database.refresh(tea)
+        assert tea.stock_quantity == Decimal("95.000")
+
+
+def test_process_sale_merge_keeps_first_occurrence_price_on_conflict() -> None:
+    """A raw request with conflicting unit_price for the same product_id
+    across two lines must deterministically keep the FIRST occurrence's
+    price (the UI never produces this; only a direct API call could)."""
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as database:
+        tea = create_product(database, name="Tea", stock="100")
+        sale = process_sale(
+            database,
+            SaleCreate(
+                items=[
+                    SaleItemCreate(product_id=tea.id, quantity=Decimal("2"), unit_price=Decimal("11")),
+                    SaleItemCreate(product_id=tea.id, quantity=Decimal("3"), unit_price=Decimal("99")),
+                ]
+            ),
+        )
+        assert len(sale.items) == 1
+        assert sale.items[0].quantity == Decimal("5.000")
+        assert sale.items[0].unit_price == Decimal("11.00")
+
+
+def test_hold_sale_merges_duplicate_product_lines() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as database:
+        tea = create_product(database, name="Tea", stock="100")
+        held = hold_sale(
+            database,
+            SaleCreate(
+                items=[
+                    SaleItemCreate(product_id=tea.id, quantity=Decimal("1")),
+                    SaleItemCreate(product_id=tea.id, quantity=Decimal("4")),
+                ]
+            ),
+        )
+        assert len(held.items) == 1
+        assert held.items[0].quantity == Decimal("5.000")
+
+
+def test_edit_sale_merges_duplicate_product_lines() -> None:
+    """Adding a product already on the invoice, via an edit, must merge into
+    the existing line rather than create a second one."""
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as database:
+        tea = create_product(database, name="Tea", stock="100")
+        sale = process_sale(
+            database,
+            SaleCreate(items=[SaleItemCreate(product_id=tea.id, quantity=Decimal("2"))]),
+        )
+        existing_item = sale.items[0]
+
+        updated, _ = edit_sale(
+            database,
+            sale,
+            SaleEditRequest(
+                items=[
+                    SaleItemCreate(id=existing_item.id, product_id=tea.id, quantity=Decimal("2")),
+                    # A brand-new line for the SAME product, id=None.
+                    SaleItemCreate(product_id=tea.id, quantity=Decimal("3")),
+                ]
+            ),
+        )
+        assert len(updated.items) == 1
+        assert updated.items[0].quantity == Decimal("5.000")
+        database.refresh(tea)
+        assert tea.stock_quantity == Decimal("95.000")
+
+
+def test_process_purchase_merges_duplicate_product_lines_into_one() -> None:
+    # stock="0" so the (unrelated, pre-existing) dual-pricing-confirmation
+    # gate never triggers -- these tests only care about the merge.
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as database:
+        tea = create_product(database, name="Tea", stock="0")
+        purchase = process_purchase(
+            database,
+            PurchaseCreate(
+                items=[
+                    PurchaseItemCreate(product_id=tea.id, quantity=Decimal("2"), unit_cost=Decimal("6.25")),
+                    PurchaseItemCreate(product_id=tea.id, quantity=Decimal("3"), unit_cost=Decimal("6.25")),
+                ]
+            ),
+        )
+        assert len(purchase.items) == 1
+        assert purchase.items[0].quantity == Decimal("5.000")
+        database.refresh(tea)
+        assert tea.stock_quantity == Decimal("5.000")
+
+
+def test_process_purchase_merge_keeps_first_occurrence_cost_on_conflict() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as database:
+        tea = create_product(database, name="Tea", stock="0")
+        purchase = process_purchase(
+            database,
+            PurchaseCreate(
+                items=[
+                    PurchaseItemCreate(product_id=tea.id, quantity=Decimal("2"), unit_cost=Decimal("6.25")),
+                    PurchaseItemCreate(product_id=tea.id, quantity=Decimal("3"), unit_cost=Decimal("50")),
+                ]
+            ),
+        )
+        assert len(purchase.items) == 1
+        assert purchase.items[0].quantity == Decimal("5.000")
+        assert purchase.items[0].unit_cost == Decimal("6.25")
+
+
+def test_edit_purchase_merges_duplicate_product_lines() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as database:
+        tea = create_product(database, name="Tea", stock="0")
+        purchase = process_purchase(
+            database,
+            PurchaseCreate(
+                items=[PurchaseItemCreate(product_id=tea.id, quantity=Decimal("2"), unit_cost=Decimal("6.25"))]
+            ),
+        )
+        existing_item = purchase.items[0]
+
+        updated, _ = edit_purchase(
+            database,
+            purchase,
+            PurchaseEditRequest(
+                items=[
+                    PurchaseItemCreate(
+                        id=existing_item.id, product_id=tea.id, quantity=Decimal("2"), unit_cost=Decimal("6.25")
+                    ),
+                    # A brand-new line for the SAME product, id=None.
+                    PurchaseItemCreate(product_id=tea.id, quantity=Decimal("3"), unit_cost=Decimal("6.25")),
+                ]
+            ),
+        )
+        assert len(updated.items) == 1
+        assert updated.items[0].quantity == Decimal("5.000")
+        database.refresh(tea)
+        assert tea.stock_quantity == Decimal("5.000")

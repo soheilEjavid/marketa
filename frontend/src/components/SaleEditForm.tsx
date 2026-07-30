@@ -79,11 +79,19 @@ export function SaleEditForm({ sale, onClose, onSaved }: SaleEditFormProps) {
   }
 
   function addLineForProduct(product: Product) {
-    const priceTier = product.is_dual_priced ? "old" : undefined;
-    const unitPrice = product.is_dual_priced
-      ? Number(product.old_sale_price ?? product.sale_price)
-      : Number(product.sale_price);
-    setLines((current) => [...current, { id: null, product, quantity: 1, unitPrice, discount: 0, priceTier }]);
+    setLines((current) => {
+      const existingIndex = current.findIndex((line) => line.product.id === product.id);
+      if (existingIndex !== -1) {
+        return current.map((line, i) =>
+          i === existingIndex ? { ...line, quantity: line.quantity + 1 } : line,
+        );
+      }
+      const priceTier = product.is_dual_priced ? "old" : undefined;
+      const unitPrice = product.is_dual_priced
+        ? Number(product.old_sale_price ?? product.sale_price)
+        : Number(product.sale_price);
+      return [...current, { id: null, product, quantity: 1, unitPrice, discount: 0, priceTier }];
+    });
   }
 
   function addLine(productId: number) {
