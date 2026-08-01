@@ -309,6 +309,11 @@ All other Customers & Credit rows unchanged.
 | 8.46 | **Loyalty liability report** *(new)* | ✅ FULL | `GET /reports/loyalty-liability`; Reports → "باشگاه مشتریان" tab; sweeps expired points before reading so the figure is always current | — |
 | 8.47 | **Upcoming-birthdays report** *(new)* | ✅ FULL | `GET /reports/upcoming-birthdays?within_days=`; correctly wraps year-end (Dec→Jan) | No automated reminder — visible list only, matching the low-stock widget's pattern |
 | 8.48 | **Churn-risk customers report** *(new)* | ✅ FULL | `GET /reports/churn-risk`; ≥2 completed sales in the trailing 90 days but none in the last 30 — a real SQL `FILTER` aggregate, not a Python loop | No action button beyond visibility (no auto-coupon, no SMS — see 13.x) |
+| 8.49 | **Internal inflation-rate report** *(planned, designed 6 مرداد)* | ❌ NOT (designed, not started) | Full spec in `docs/inflation-rate-report.md`: matched-basket, quantity-weighted (Laspeyres-style) index comparing cost-side (`PurchaseItem.unit_cost`) vs. price-side (`SaleItem.unit_price`) between two user-chosen periods; explicitly the store's own internal index, not the national/official rate; no new tables needed | Not started — no backend function, no endpoint, no UI tab yet |
+
+> Note: this row was added by referencing the design doc; the domain's weighted
+> completion % in Section B above was not recalculated, since that requires the
+> full underlying weight/count methodology and shouldn't be guessed at.
 
 ### 9. INTELLIGENT ANALYTICS — unchanged
 
