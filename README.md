@@ -125,14 +125,18 @@ cd /home/tsik/marketa/backend
 pytest
 ```
 
-## Next implementation milestone
+## Current status and next gaps
 
-Phase 3 implementation has started with searchable customer and supplier
-management across the API and RTL/LTR frontend. The codebase-specific plan,
-migration sequence, demo-data strategy, risks, and acceptance criteria are in
-`docs/phase-3-technical-blueprint.md`.
+The project is well past its early phases now — real authentication/RBAC,
+customer/supplier management with payments and ledgers, the customer loyalty
+program, dual pricing, checks, and consignment tracking are all built. For an
+up-to-date, evidence-based picture of what's done and what's still missing
+(tax support, expense tracking, multi-warehouse, weighted goods, and more),
+see `docs/MARKETA_FEATURE_AUDIT.md`. The earlier `docs/phase-3-technical-blueprint.md`
+plan has been completed and is archived at `docs/archive/phase-3-technical-blueprint.md`
+for historical reference only.
 
-Apply the latest party-management migration with:
+Apply the latest migration with:
 
 ```bash
 cd /home/tsik/marketa/backend
