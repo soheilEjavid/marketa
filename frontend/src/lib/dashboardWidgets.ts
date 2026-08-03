@@ -6,6 +6,7 @@ export type WidgetId =
   | "chart-sales-trend"
   | "chart-profit-trend"
   | "list-low-stock"
+  | "list-near-expiry"
   | "list-top-debtors"
   | "list-recent-activity"
   | "chart-sales-comparison"
@@ -28,6 +29,7 @@ export const DASHBOARD_WIDGETS: WidgetDefinition[] = [
   { id: "chart-sales-trend", labelKey: "salesTrend" },
   { id: "chart-profit-trend", labelKey: "profitTrend" },
   { id: "list-low-stock", labelKey: "inventoryAttention" },
+  { id: "list-near-expiry", labelKey: "nearExpiryTitle" },
   { id: "list-top-debtors", labelKey: "topDebtors" },
   { id: "list-recent-activity", labelKey: "latestTransactions" },
   { id: "chart-sales-comparison", labelKey: "salesComparisonTitle" },

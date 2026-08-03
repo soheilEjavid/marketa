@@ -19,7 +19,9 @@ import { Modal } from "../components/Modal";
 import { CategoryManagerModal } from "../components/CategoryManagerModal";
 import { ProductFormModal } from "../components/ProductFormModal";
 import { getStockStatus } from "../lib/stockStatus";
+import { daysUntilExpiry, getExpiryStatus } from "../lib/expiryStatus";
 import { calculateMarginPct, formatMarginPct, getMarginStatus } from "../lib/margin";
+import { isoToJalaliStr } from "../utils/jalali";
 import { canManageProducts } from "../permissions";
 import { getSession } from "../session";
 
@@ -35,6 +37,35 @@ export function Products() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [showInactive, setShowInactive] = useState(false);
+  // Persisted like the dashboard-widget visibility toggles in
+  // lib/dashboardWidgets.ts (localStorage — the project's established
+  // pattern for filter/preference state that must survive a refresh; this
+  // page had no existing persisted filter of its own to follow). A one-shot
+  // hand-off key ("marketa-products-filter" = "expiry") is set by the
+  // Dashboard widget and the Reports "نزدیک انقضا" tab's "مشاهده همه" button;
+  // consumed once here, then cleared so it doesn't stick beyond that one
+  // navigation — the *toggle itself* is what persists afterward.
+  const [expiryFilterOnly, setExpiryFilterOnly] = useState<boolean>(() => {
+    try {
+      if (localStorage.getItem("marketa-products-filter") === "expiry") {
+        localStorage.removeItem("marketa-products-filter");
+        localStorage.setItem("marketa-products-expiry-filter", "true");
+        return true;
+      }
+      return localStorage.getItem("marketa-products-expiry-filter") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  function toggleExpiryFilter(value: boolean) {
+    setExpiryFilterOnly(value);
+    try {
+      localStorage.setItem("marketa-products-expiry-filter", String(value));
+    } catch {
+      // localStorage unavailable — filter still works for this session.
+    }
+  }
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; dir: "asc" | "desc" }>({
     key: "name",
     dir: "asc",
@@ -78,6 +109,10 @@ export function Products() {
     const query = search.trim().toLowerCase();
     return products.filter((product) => {
       if (categoryFilter && product.category_id !== Number(categoryFilter)) return false;
+      // Full expiry-tracking view: every expiry-dated product, all statuses
+      // (including "green", far from expiring) — not just the red/orange
+      // subset the dashboard widget/report tab focus on.
+      if (expiryFilterOnly && !product.expiration_date) return false;
       if (!query) return true;
       return (
         product.name.toLowerCase().includes(query) ||
@@ -86,7 +121,7 @@ export function Products() {
         product.sku?.toLowerCase().includes(query)
       );
     });
-  }, [products, search, categoryFilter]);
+  }, [products, search, categoryFilter, expiryFilterOnly]);
 
   const sorted = useMemo(() => {
     const list = [...filtered];
@@ -235,6 +270,14 @@ export function Products() {
           />
           <span>{t("showInactive")}</span>
         </label>
+        <label className="checkbox-field product-filter-toggle">
+          <input
+            type="checkbox"
+            checked={expiryFilterOnly}
+            onChange={(event) => toggleExpiryFilter(event.target.checked)}
+          />
+          <span>{t("nearExpiryTitle")}</span>
+        </label>
       </div>
 
       <section className="panel" style={{ padding: 0, overflow: "hidden" }}>
@@ -308,6 +351,17 @@ export function Products() {
                         {!product.is_active && (
                           <span className="status-pill">{t("inactive")}</span>
                         )}
+                        {product.expiration_date && (() => {
+                          const expiryStatus = getExpiryStatus(daysUntilExpiry(product.expiration_date));
+                          const daysLeft = daysUntilExpiry(product.expiration_date);
+                          return (
+                            <span className={`expiry-status-badge ${expiryStatus}`}>
+                              {expiryStatus === "expired"
+                                ? t("alreadyExpiredLabel")
+                                : `${isoToJalaliStr(product.expiration_date)} · ${t("daysRemainingLabel").replace("{days}", number(daysLeft))}`}
+                            </span>
+                          );
+                        })()}
                       </div>
                       {(product.brand || categoryName) && (
                         <small style={{ display: "block", color: "var(--muted)", fontSize: 11 }}>

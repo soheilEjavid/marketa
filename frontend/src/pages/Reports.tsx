@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   Boxes,
+  CalendarClock,
   CalendarDays,
   CheckCircle2,
   ChevronLeft,
@@ -21,6 +22,7 @@ import {
 import {
   getCashierPerformance,
   getLoyaltyRedemptions,
+  getNearExpiryProducts,
   getOutstandingConsignment,
   getSalesPage,
   getShifts,
@@ -29,6 +31,7 @@ import {
 } from "../api";
 import { JalaliDatePicker } from "../components/JalaliDatePicker";
 import { SaleDetailView } from "../components/SaleDetailView";
+import type { Page } from "../components/Sidebar";
 import { useI18n } from "../i18n";
 import { calculateInvoiceMargin, calculateMarginPct, formatMarginPct, getMarginStatus } from "../lib/margin";
 import { isoToJalaliStr } from "../utils/jalali";
@@ -37,11 +40,21 @@ import type {
   CashierShift,
   DeadStockRow,
   LoyaltyRedemptionRow,
+  NearExpiryRow,
   OutstandingConsignmentRow,
   Sale,
 } from "../types";
 
-type ReportTab = "sales" | "products" | "stock" | "dead-stock" | "cashiers" | "balances" | "consignment" | "loyalty";
+type ReportTab =
+  | "sales"
+  | "products"
+  | "stock"
+  | "dead-stock"
+  | "near-expiry"
+  | "cashiers"
+  | "balances"
+  | "consignment"
+  | "loyalty";
 
 type DailySalesRow = {
   date: string;
@@ -112,13 +125,18 @@ const tabs: ReportTabDefinition[] = [
   { key: "products", label: "products", Icon: TrendingUp },
   { key: "stock", label: "inventory", Icon: ReceiptText },
   { key: "dead-stock", label: "deadStockTitle", Icon: Moon },
+  { key: "near-expiry", label: "nearExpiryTitle", Icon: CalendarClock },
   { key: "cashiers", label: "cashierPerformance", Icon: UserRound },
   { key: "balances", label: "balances", Icon: UsersRound },
   { key: "consignment", label: "consignmentGoods", Icon: Package },
   { key: "loyalty", label: "loyaltyRedemptions", Icon: Gift },
 ];
 
-export function Reports() {
+type ReportsProps = {
+  onNavigate?: (page: Page) => void;
+};
+
+export function Reports({ onNavigate }: ReportsProps = {}) {
   const { money, number, t, language } = useI18n();
 
   const [tab, setTab] = useState<ReportTab>("sales");
@@ -131,6 +149,8 @@ export function Reports() {
   const [deadStock, setDeadStock] = useState<DeadStockRow[]>([]);
   const [deadStockLookback, setDeadStockLookback] = useState<30 | 60 | 90>(30);
   const [deadStockLoading, setDeadStockLoading] = useState(true);
+  const [nearExpiry, setNearExpiry] = useState<NearExpiryRow[]>([]);
+  const [nearExpiryLoading, setNearExpiryLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [invoiceList, setInvoiceList] = useState<Sale[]>([]);
@@ -260,6 +280,21 @@ export function Reports() {
     () => deadStock.reduce((sum, item) => sum + Number(item.value_tied_up), 0),
     [deadStock],
   );
+
+  const loadNearExpiry = useCallback(async () => {
+    setNearExpiryLoading(true);
+    try {
+      setNearExpiry(await getNearExpiryProducts());
+    } catch {
+      setNearExpiry([]);
+    } finally {
+      setNearExpiryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadNearExpiry();
+  }, [loadNearExpiry]);
 
   const [cashierPerformance, setCashierPerformance] = useState<CashierPerformanceRow[]>([]);
   const [shifts, setShifts] = useState<CashierShift[]>([]);
@@ -674,6 +709,66 @@ export function Reports() {
               ))
             ) : (
               <div className="empty-state compact">{t("noDeadStock")}</div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {!loading && tab === "near-expiry" && (
+        <section className="panel report-table-wrap">
+          <div className="panel-heading">
+            <div>
+              <h2>{t("nearExpiryTitle")}</h2>
+            </div>
+            {onNavigate && (
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => {
+                  // Same hand-off key the Dashboard widget uses — Products.tsx
+                  // reads it once on mount to open pre-filtered.
+                  localStorage.setItem("marketa-products-filter", "expiry");
+                  onNavigate("products");
+                }}
+              >
+                {t("viewAll")}
+              </button>
+            )}
+          </div>
+
+          <div className="report-table">
+            <div className="report-table-row report-cols-4 report-head">
+              <span className="report-header-cell">
+                <CalendarClock size={14} strokeWidth={1.8} />
+                {t("product")}
+              </span>
+              <span className="report-header-cell">
+                <Boxes size={14} strokeWidth={1.8} />
+                {t("stock")}
+              </span>
+              <span className="report-header-cell">
+                <Clock size={14} strokeWidth={1.8} />
+                {t("expiryDateColumn")}
+              </span>
+              <span className="report-header-cell" />
+            </div>
+            {nearExpiryLoading ? (
+              <div className="empty-state compact">{t("loading")}</div>
+            ) : nearExpiry.length > 0 ? (
+              nearExpiry.map((item) => (
+                <div className="report-table-row report-cols-4 animated-line" key={item.product_id}>
+                  <strong>{item.product_name}</strong>
+                  <span className="muted-text">{number(Number(item.stock_quantity))}</span>
+                  <span className="muted-text">{isoToJalaliStr(item.expiration_date)}</span>
+                  <span className={`expiry-status-badge ${item.status}`}>
+                    {item.status === "expired"
+                      ? t("alreadyExpiredLabel")
+                      : t("daysRemainingLabel").replace("{days}", number(item.days_until_expiry))}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="empty-state compact">{t("systemOnline")}</div>
             )}
           </div>
         </section>

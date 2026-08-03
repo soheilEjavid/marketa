@@ -588,6 +588,15 @@ export type DeadStockRow = {
   value_tied_up: string;
 };
 
+export type NearExpiryRow = {
+  product_id: number;
+  product_name: string;
+  stock_quantity: string;
+  expiration_date: string;
+  days_until_expiry: number;
+  status: "expired" | "red" | "orange";
+};
+
 export type OutstandingConsignmentRow = {
   purchase_item_id: number;
   purchase_id: number;

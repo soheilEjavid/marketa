@@ -4,6 +4,7 @@ import { History, ImagePlus, Layers, X } from "lucide-react";
 import { createCategory, createProduct, getAuditLogs, updateProduct, ApiError } from "../api";
 import { useI18n } from "../i18n";
 import { calculateMarginPct, formatMarginPct } from "../lib/margin";
+import { JalaliDatePicker } from "./JalaliDatePicker";
 import { Modal } from "./Modal";
 import type { AuditLogEntry, Category, Product } from "../types";
 
@@ -84,6 +85,7 @@ export function ProductFormModal({
   const [lowStockThreshold, setLowStockThreshold] = useState(toInputString(product?.low_stock_threshold) || "0");
   const [packagingUnitLabel, setPackagingUnitLabel] = useState(toInputString(product?.packaging_unit_label));
   const [packagingUnitQuantity, setPackagingUnitQuantity] = useState(toInputString(product?.packaging_unit_quantity));
+  const [expirationDate, setExpirationDate] = useState(toInputString(product?.expiration_date));
   const [imageUrl, setImageUrl] = useState<string | null>(product?.image_url ?? null);
   const [description, setDescription] = useState(toInputString(product?.description));
   const [isActive, setIsActive] = useState(product?.is_active ?? true);
@@ -258,6 +260,7 @@ export function ProductFormModal({
         unit: unit.trim() || null,
         packaging_unit_label: packagingUnitLabel.trim() || null,
         packaging_unit_quantity: packagingUnitQuantity.trim() ? Number(packagingUnitQuantity) : null,
+        expiration_date: expirationDate.trim() || null,
         image_url: imageUrl,
         description: description.trim() || null,
         is_active: isActive,
@@ -615,6 +618,14 @@ export function ProductFormModal({
                     value={lowStockThreshold}
                     onChange={(event) => setLowStockThreshold(event.target.value)}
                   />
+                </label>
+
+                <label className="field">
+                  {/* Reuses the existing "expiryDate" label (already used for
+                      PurchaseItem.expiry_date in Purchases.tsx) — same
+                      concept, no need for a near-duplicate i18n key. */}
+                  <span>{t("expiryDate")} ({t("optional")})</span>
+                  <JalaliDatePicker value={expirationDate} onChange={setExpirationDate} />
                 </label>
 
                 <div className="field full-span">

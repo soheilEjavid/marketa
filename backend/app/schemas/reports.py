@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 from pydantic import BaseModel
 
 
@@ -44,6 +45,15 @@ class DeadStockRow(BaseModel):
     stock_quantity: Decimal
     days_since_last_sale: int | None
     value_tied_up: Decimal
+
+
+class NearExpiryRow(BaseModel):
+    product_id: int
+    product_name: str
+    stock_quantity: Decimal
+    expiration_date: date
+    days_until_expiry: int
+    status: Literal["expired", "red", "orange"]
 
 
 class CashierPerformanceRow(BaseModel):

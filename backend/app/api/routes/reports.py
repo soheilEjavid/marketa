@@ -19,6 +19,7 @@ from app.schemas.reports import (
     LowStockReport,
     LoyaltyLiabilityRow,
     LoyaltyRedemptionRow,
+    NearExpiryRow,
     OutstandingConsignmentRow,
     PaymentMethodBreakdown,
     ProductSalesSummary,
@@ -90,6 +91,16 @@ async def get_dead_stock(
     _: UserModel = Depends(require_role(*READ_ROLES)),
 ):
     return report_service.dead_stock(database, lookback_days=lookback_days)
+
+
+@router.get("/near-expiry", response_model=list[NearExpiryRow])
+async def get_near_expiry(
+    database: DatabaseSession,
+    red_days: int = Query(default=7, ge=1, le=365),
+    orange_days: int = Query(default=30, ge=1, le=365),
+    _: UserModel = Depends(require_role(*READ_ROLES)),
+):
+    return report_service.near_expiry_products(database, red_days=red_days, orange_days=orange_days)
 
 
 @router.get("/cashier-performance", response_model=list[CashierPerformanceRow])

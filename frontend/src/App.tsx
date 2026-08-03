@@ -113,7 +113,7 @@ export default function App() {
           />
         );
       case "reports":
-        return <Reports />;
+        return <Reports onNavigate={(page) => setView({ page })} />;
       case "supplier-detail":
         return (
           <SupplierDetail

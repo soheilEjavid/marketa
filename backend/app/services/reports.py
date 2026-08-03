@@ -280,6 +280,62 @@ def dead_stock(database: Session, *, lookback_days: int = 30) -> list[dict]:
     return result
 
 
+def near_expiry_products(
+    database: Session, *, red_days: int = 7, orange_days: int = 30
+) -> list[dict]:
+    """Products with stock on hand whose Product.expiration_date is already
+    past, or falls within `orange_days` from today — a focused "needs
+    attention" list, same shape as dead_stock() above, not a full inventory
+    dump. Items expiring further out than orange_days simply aren't
+    included, same as dead_stock excludes recently-sold products.
+
+    Product.expiration_date (not PurchaseItem.expiry_date) is the
+    authoritative source — it's the only expiry field any existing business
+    logic (services/loyalty.py's near-expiry earn-rate boost) actually
+    reads. PurchaseItem.expiry_date is recorded per purchase batch but never
+    aggregated back onto the product, so there is nothing to reconcile here.
+    Entirely independent of the loyalty near-expiry check — this function
+    shares no code or threshold with services/loyalty.py.
+    """
+    today = datetime.now(UTC).date()
+    orange_cutoff = today + timedelta(days=orange_days)
+
+    rows = database.execute(
+        select(Product.id, Product.name, Product.stock_quantity, Product.expiration_date)
+        .where(
+            Product.is_active.is_(True),
+            Product.stock_quantity > 0,
+            Product.expiration_date.is_not(None),
+            Product.expiration_date <= orange_cutoff,
+        )
+    ).all()
+
+    result = []
+    for product_id, product_name, stock_quantity, expiration_date in rows:
+        days_until_expiry = (expiration_date - today).days
+        if days_until_expiry < 0:
+            status = "expired"
+        elif days_until_expiry <= red_days:
+            status = "red"
+        else:
+            status = "orange"
+        result.append(
+            {
+                "product_id": product_id,
+                "product_name": product_name,
+                "stock_quantity": stock_quantity,
+                "expiration_date": expiration_date,
+                "days_until_expiry": days_until_expiry,
+                "status": status,
+            }
+        )
+
+    # Most urgent first: already-expired (most negative days) before
+    # soon-to-expire, mirroring dead_stock's "worst offender first" sort.
+    result.sort(key=lambda item: item["days_until_expiry"])
+    return result
+
+
 def cashier_performance(
     database: Session,
     *,

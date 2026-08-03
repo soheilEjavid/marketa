@@ -1484,6 +1484,26 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
 }
 .credit-status-badge.unpaid { background: var(--danger); color: white; }
 .credit-status-badge.partial { background: var(--orange); color: white; }
+
+/* Expiry status — reuses the exact same danger/orange/success tokens as
+   .credit-status-badge / .stock-value / .type-pill elsewhere, no new colors.
+   "expired" is solid + bold so it never reads as just another "red" item —
+   the label text ("منقضی شده" vs. a day count) is the other half of that
+   distinction, set in the components that use this class. */
+.expiry-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.expiry-status-badge.expired { background: var(--danger); color: white; }
+.expiry-status-badge.red { background: var(--danger-soft); color: var(--danger); }
+.expiry-status-badge.orange { background: var(--orange-light); color: var(--orange-dark); }
+.expiry-status-badge.green { background: var(--success-soft); color: var(--success); }
 .quantity-positive { color: var(--success); }
 .quantity-negative { color: var(--danger); }
 .inventory-row time, .inventory-row > span { color: var(--muted); }

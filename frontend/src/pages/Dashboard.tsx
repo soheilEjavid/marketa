@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { ProfitChart } from "../components/ProfitChart";
 
-import { getDailySales, getDashboardSummary, getProducts } from "../api";
+import { getDailySales, getDashboardSummary, getNearExpiryProducts, getProducts } from "../api";
 import { SalesChart } from "../components/SalesChart";
 import { SalesComparisonChart, type SalesComparisonPoint } from "../components/SalesComparisonChart";
 import { PaymentMethodChart } from "../components/PaymentMethodChart";
@@ -22,7 +22,7 @@ import { CheckTotalsWidget } from "../components/CheckTotalsWidget";
 import { DashboardCustomizePanel } from "../components/DashboardCustomizePanel";
 import type { Page } from "../components/Sidebar";
 import { useI18n } from "../i18n";
-import type { DashboardSummary, Product } from "../types";
+import type { DashboardSummary, NearExpiryRow, Product } from "../types";
 import { getStockStatus } from "../lib/stockStatus";
 import { loadWidgetVisibility, saveWidgetVisibility, type WidgetId } from "../lib/dashboardWidgets";
 
@@ -43,6 +43,7 @@ function shiftedDate(base: Date, days: number): Date {
 export function Dashboard({ onNavigate }: DashboardProps) {
   const { direction, locale, money, number, t } = useI18n();
   const [products, setProducts] = useState<Product[]>([]);
+  const [nearExpiry, setNearExpiry] = useState<NearExpiryRow[]>([]);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [comparisonData, setComparisonData] = useState<SalesComparisonPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -68,6 +69,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     visibility["list-top-debtors"] ||
     visibility["list-recent-activity"];
   const needsProducts = visibility["list-low-stock"];
+  const needsNearExpiry = visibility["list-near-expiry"];
   const needsComparison = visibility["chart-sales-comparison"];
 
   const loadData = useCallback(async () => {
@@ -75,19 +77,24 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     setError("");
 
     try {
-      const [productsData, summaryData] = await Promise.all([
+      const [productsData, summaryData, nearExpiryData] = await Promise.all([
         needsProducts ? getProducts() : Promise.resolve<Product[]>([]),
         needsSummary ? getDashboardSummary() : Promise.resolve<DashboardSummary | null>(null),
+        // Backend-computed (not filtered client-side like lowStockProducts
+        // below) since the red/orange/expired classification needs a single
+        // consistent "today" boundary — see services/reports.py::near_expiry_products.
+        needsNearExpiry ? getNearExpiryProducts() : Promise.resolve<NearExpiryRow[]>([]),
       ]);
 
       setProducts(productsData);
       setSummary(summaryData);
+      setNearExpiry(nearExpiryData);
     } catch {
       setError(t("apiError"));
     } finally {
       setLoading(false);
     }
-  }, [t, needsProducts, needsSummary]);
+  }, [t, needsProducts, needsNearExpiry, needsSummary]);
 
   useEffect(() => {
     loadData();
@@ -291,6 +298,54 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
               <button className="full-button" onClick={() => onNavigate("inventory")}>
                 {t("inventory")}
+              </button>
+            </article>
+          )}
+
+          {visibility["list-near-expiry"] && (
+            <article className="panel stock-panel">
+              <div className="panel-heading">
+                <div>
+                  <p className="eyebrow">{t("inventory")}</p>
+                  <h2>{t("nearExpiryTitle")}</h2>
+                </div>
+                <span className="count-badge">{number(nearExpiry.length)}</span>
+              </div>
+
+              <div className="stock-list">
+                {nearExpiry.slice(0, 5).map((item) => (
+                  <div className="stock-row" key={item.product_id}>
+                    <span className="product-avatar">{item.product_name.charAt(0)}</span>
+                    <div>
+                      <strong>{item.product_name}</strong>
+                      <small>
+                        <span className={`expiry-status-badge ${item.status}`}>
+                          {item.status === "expired"
+                            ? t("alreadyExpiredLabel")
+                            : t("daysRemainingLabel").replace("{days}", number(item.days_until_expiry))}
+                        </span>{" "}
+                        {number(Number(item.stock_quantity))} {t("available")}
+                      </small>
+                    </div>
+                  </div>
+                ))}
+
+                {!loading && nearExpiry.length === 0 && (
+                  <div className="empty-state compact">{t("systemOnline")}</div>
+                )}
+              </div>
+
+              <button
+                className="full-button"
+                onClick={() => {
+                  // Same localStorage-based hand-off used by dashboardWidgets.ts
+                  // for cross-reload state — the Products page reads this once
+                  // on mount to open already filtered to expiry-dated items.
+                  localStorage.setItem("marketa-products-filter", "expiry");
+                  onNavigate("products");
+                }}
+              >
+                {t("viewAll")}
               </button>
             </article>
           )}

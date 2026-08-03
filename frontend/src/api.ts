@@ -26,6 +26,7 @@ import type {
   LoyaltyRewardSuggestion,
   LoyaltySettings,
   LoyaltyTransaction,
+  NearExpiryRow,
   OutstandingConsignmentRow,
   PaymentMethodBreakdownRow,
   Product,
@@ -560,6 +561,17 @@ export async function getTopProducts(params: {
   if (params.limit) query.set("limit", String(params.limit));
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return request<TopProductRow[]>(`${apiBaseUrl}/reports/top-products${suffix}`);
+}
+
+export async function getNearExpiryProducts(params: {
+  redDays?: number;
+  orangeDays?: number;
+} = {}): Promise<NearExpiryRow[]> {
+  const query = new URLSearchParams();
+  if (params.redDays) query.set("red_days", String(params.redDays));
+  if (params.orangeDays) query.set("orange_days", String(params.orangeDays));
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request<NearExpiryRow[]>(`${apiBaseUrl}/reports/near-expiry${suffix}`);
 }
 
 export async function getPaymentMethodBreakdown(
