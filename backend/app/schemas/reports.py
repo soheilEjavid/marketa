@@ -143,3 +143,61 @@ class LoyaltyRedemptionRow(BaseModel):
     points_used: int
     product_names: list[str]
     paid_at: datetime
+
+
+class DiagnosisResult(BaseModel):
+    label: Literal[
+        "healthy_growth",
+        "stagflation",
+        "successful_price_competition",
+        "real_price_recession",
+    ]
+    title: str
+    summary_sentence: str
+
+
+class RevenueInflationImpact(BaseModel):
+    nominal_revenue_p1: Decimal
+    nominal_revenue_p2: Decimal
+    real_revenue_p2: Decimal | None
+    nominal_growth_pct: Decimal | None
+    real_growth_pct: Decimal | None
+
+
+class CategoryInflationRow(BaseModel):
+    category_id: int | None
+    category_name: str
+    cost_inflation_pct: Decimal | None
+    price_inflation_pct: Decimal | None
+    volume_index_pct: Decimal | None
+    diagnosis: DiagnosisResult | None
+    insufficient_data: bool
+
+
+class PriceIncreaseRow(BaseModel):
+    product_id: int
+    product_name: str
+    price_period1: Decimal
+    price_period2: Decimal
+    pct_change: Decimal
+
+
+class VolumeDeclineRow(BaseModel):
+    product_id: int
+    product_name: str
+    quantity_period1: Decimal
+    quantity_period2: Decimal
+    pct_change: Decimal
+
+
+class InflationRateReport(BaseModel):
+    cost_inflation_pct: Decimal | None
+    price_inflation_pct: Decimal | None
+    volume_index_pct: Decimal | None
+    real_profit_index_pct: Decimal | None
+    insufficient_data: bool
+    diagnosis: DiagnosisResult | None
+    revenue_impact: RevenueInflationImpact
+    top_price_increases: list[PriceIncreaseRow]
+    top_volume_decliners: list[VolumeDeclineRow]
+    by_category: list[CategoryInflationRow]

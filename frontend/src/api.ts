@@ -17,6 +17,10 @@ import type {
   CustomerTierRow,
   DailySalesPoint,
   DashboardSummary,
+  Expense,
+  ExpenseInput,
+  ExpensePaymentMethod,
+  InflationRateReport,
   InventoryTransaction,
   InventoryTransactionType,
   LoyaltyBalance,
@@ -27,7 +31,10 @@ import type {
   LoyaltySettings,
   LoyaltyTransaction,
   NearExpiryRow,
+  NetProfitReport,
   OutstandingConsignmentRow,
+  SalaryAdvance,
+  SalaryPayment,
   PaymentMethodBreakdownRow,
   Product,
   ProductInput,
@@ -572,6 +579,94 @@ export async function getNearExpiryProducts(params: {
   if (params.orangeDays) query.set("orange_days", String(params.orangeDays));
   const suffix = query.toString() ? `?${query.toString()}` : "";
   return request<NearExpiryRow[]>(`${apiBaseUrl}/reports/near-expiry${suffix}`);
+}
+
+export async function getInflationRate(params: {
+  period1Start: string;
+  period1End: string;
+  period2Start: string;
+  period2End: string;
+}): Promise<InflationRateReport> {
+  const query = new URLSearchParams({
+    period1_start: params.period1Start,
+    period1_end: params.period1End,
+    period2_start: params.period2Start,
+    period2_end: params.period2End,
+  });
+  return request<InflationRateReport>(`${apiBaseUrl}/reports/inflation-rate?${query.toString()}`);
+}
+
+export async function getExpenses(params: { fromDate?: string; toDate?: string } = {}): Promise<Expense[]> {
+  const query = new URLSearchParams();
+  if (params.fromDate) query.set("from_date", params.fromDate);
+  if (params.toDate) query.set("to_date", params.toDate);
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return request<Expense[]>(`${apiBaseUrl}/expenses${suffix}`);
+}
+
+export async function getExpenseCategories(): Promise<string[]> {
+  return request<string[]>(`${apiBaseUrl}/expenses/categories`);
+}
+
+export async function createExpense(data: ExpenseInput): Promise<Expense> {
+  return request<Expense>(`${apiBaseUrl}/expenses`, { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function updateExpense(expenseId: number, data: Partial<ExpenseInput>): Promise<Expense> {
+  return request<Expense>(`${apiBaseUrl}/expenses/${expenseId}`, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+export async function getSalaryAdvances(params: { employeeId?: number } = {}): Promise<SalaryAdvance[]> {
+  const query = params.employeeId ? `?employee_id=${params.employeeId}` : "";
+  return request<SalaryAdvance[]>(`${apiBaseUrl}/salary-advances${query}`);
+}
+
+export async function createSalaryAdvance(data: {
+  employee_id: number;
+  amount: number;
+  date: string;
+  notes?: string | null;
+}): Promise<SalaryAdvance> {
+  return request<SalaryAdvance>(`${apiBaseUrl}/salary-advances`, { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function getSalaryPayments(params: { employeeId?: number } = {}): Promise<SalaryPayment[]> {
+  const query = params.employeeId ? `?employee_id=${params.employeeId}` : "";
+  return request<SalaryPayment[]>(`${apiBaseUrl}/salary-payments${query}`);
+}
+
+export async function createSalaryPayment(data: {
+  employee_id: number;
+  period_year: number;
+  period_month: number;
+  base_amount: number;
+  bonus_amount?: number;
+  other_deductions_amount?: number;
+  payment_method: ExpensePaymentMethod;
+  notes?: string | null;
+}): Promise<SalaryPayment> {
+  return request<SalaryPayment>(`${apiBaseUrl}/salary-payments`, { method: "POST", body: JSON.stringify(data) });
+}
+
+export async function updateSalaryPayment(
+  paymentId: number,
+  data: Partial<{
+    base_amount: number;
+    bonus_amount: number;
+    other_deductions_amount: number;
+    payment_method: ExpensePaymentMethod;
+    notes: string | null;
+  }>,
+): Promise<SalaryPayment> {
+  return request<SalaryPayment>(`${apiBaseUrl}/salary-payments/${paymentId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function getNetProfit(params: { periodStart: string; periodEnd: string }): Promise<NetProfitReport> {
+  const query = new URLSearchParams({ period_start: params.periodStart, period_end: params.periodEnd });
+  return request<NetProfitReport>(`${apiBaseUrl}/reports/net-profit?${query.toString()}`);
 }
 
 export async function getPaymentMethodBreakdown(

@@ -45,3 +45,10 @@ export const canViewInventoryHistory = (role: string) => has(role, ["admin", "ma
 export const canManageUsers = (role: string) => has(role, ["admin"]);
 // customers.py /loyalty/adjust: admin,manager (most sensitive loyalty action)
 export const canAdjustLoyaltyPoints = (role: string) => has(role, ["admin", "manager"]);
+// expenses.py EXPENSE_ROLES: admin,manager (general expenses + net-profit)
+export const canManageExpenses = (role: string) => has(role, ["admin", "manager"]);
+// expenses.py SALARY_ROLES: admin ONLY — even viewing payroll must be
+// restricted, not just editing (see docs/expense-management.md). Callers
+// must use this to omit the "حقوق و دستمزد" tab from the DOM entirely for
+// non-admins, not just hide it with CSS.
+export const canViewSalaries = (role: string) => has(role, ["admin"]);

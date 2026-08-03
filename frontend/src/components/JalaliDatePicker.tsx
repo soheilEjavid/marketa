@@ -20,6 +20,13 @@ type JalaliDatePickerProps = {
 
 const DROPDOWN_GAP = 6;
 const ESTIMATED_DROPDOWN_HEIGHT = 380;
+// The header (month name + 2 nav buttons) and footer ("پاک کردن" / "امروز")
+// are flex rows with non-shrinking text/buttons — forcing the dropdown to
+// match a narrow trigger's width (e.g. a compact date-range field) makes
+// those rows overflow the rounded card. The day-grid itself is fully
+// responsive (1fr columns), so only this floor matters.
+const MIN_DROPDOWN_WIDTH = 260;
+const VIEWPORT_MARGIN = 8;
 
 const MODAL_ROOT = "modal-root";
 
@@ -71,14 +78,29 @@ export function JalaliDatePicker({
   const updatePosition = useCallback(() => {
     if (!open || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
     const spaceBelow = viewportHeight - rect.bottom;
     const spaceAbove = rect.top;
     const above = spaceBelow < ESTIMATED_DROPDOWN_HEIGHT && spaceAbove > spaceBelow;
+
+    // Never let the dropdown be narrower than its own content needs, even
+    // when the trigger field itself is narrow (e.g. a compact date-range
+    // picker). Keep it left-anchored to the trigger by default, but clamp
+    // so it never runs off either edge of the viewport.
+    const width = Math.max(rect.width, MIN_DROPDOWN_WIDTH);
+    let left = rect.left;
+    if (left + width > viewportWidth - VIEWPORT_MARGIN) {
+      left = viewportWidth - VIEWPORT_MARGIN - width;
+    }
+    if (left < VIEWPORT_MARGIN) {
+      left = VIEWPORT_MARGIN;
+    }
+
     setPosition({
       top: above ? rect.top - DROPDOWN_GAP : rect.bottom + DROPDOWN_GAP,
-      left: rect.left,
-      width: rect.width,
+      left,
+      width,
       above,
     });
   }, [open]);

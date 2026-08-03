@@ -16,10 +16,11 @@ import {
   ReceiptText,
   ShoppingBasket,
   UserCog,
+  Wallet,
 } from "lucide-react";
 
 import { useI18n } from "../i18n";
-import { canManageUsers, canViewChecks, canViewInventoryHistory, canViewReports } from "../permissions";
+import { canManageExpenses, canManageUsers, canViewChecks, canViewInventoryHistory, canViewReports } from "../permissions";
 import type { Session } from "../session";
 
 export type Page =
@@ -33,6 +34,7 @@ export type Page =
   | "suppliers"
   | "checks"
   | "reports"
+  | "expenses"
   | "users";
 
 type NavItem = {
@@ -85,6 +87,7 @@ const navigationGroups: NavGroup[] = [
     items: [
       { page: "checks", label: "checks", icon: Landmark, visible: canViewChecks },
       { page: "reports", label: "reports", icon: BarChart3, visible: canViewReports },
+      { page: "expenses", label: "expenses", icon: Wallet, visible: canManageExpenses },
     ],
   },
   {

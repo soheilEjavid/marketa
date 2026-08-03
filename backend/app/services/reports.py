@@ -1,4 +1,5 @@
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from sqlalchemy import func, select
@@ -9,6 +10,7 @@ from app.models.entities import (
     AuditLog, CashierShift, Category, Customer, CustomerPayment, DocumentStatus, PaymentMethod,
     Product, Purchase, PurchaseItem, Sale, SaleItem, SalePaymentLine, Supplier, User,
 )
+from app.services.expenses import total_operating_expenses
 
 
 def daily_sales_summary(
@@ -753,3 +755,439 @@ def supplier_balances(database: Session) -> list[dict]:
         }
         for s in suppliers
     ]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Internal inflation-rate report — see docs/inflation-rate-report.md for the
+# full spec (formulas, edge cases, UX layout). This is an internal pricing
+# signal derived purely from this store's own purchase/sale history between
+# two user-chosen periods — explicitly NOT an official/national inflation
+# rate. Every function below reads from the one shared _inflation_raw_data()
+# grouped dataset; nothing here re-queries PurchaseItem/SaleItem.
+# ─────────────────────────────────────────────────────────────────────────
+
+# "موارد استثنا": below this many products transacted in *both* periods, an
+# index is statistically meaningless — return None (insufficient data)
+# instead of a number, store-wide and independently per category.
+MIN_COMMON_PRODUCTS = 5
+
+
+@dataclass
+class _ProductPeriodRow:
+    """One product's raw purchase/sale quantity+value in each of the two
+    periods — the shared grouped dataset every index function below reads.
+    Cost/revenue are 0 (not None) when there was no activity that period/side,
+    so "common product" checks are simple `> 0` comparisons.
+    """
+
+    product_id: int
+    product_name: str
+    category_id: int | None
+    category_name: str | None
+    purchase_qty_p1: Decimal
+    purchase_cost_p1: Decimal
+    purchase_qty_p2: Decimal
+    purchase_cost_p2: Decimal
+    sale_qty_p1: Decimal
+    sale_revenue_p1: Decimal
+    sale_qty_p2: Decimal
+    sale_revenue_p2: Decimal
+
+
+def _period_purchase_agg(database: Session, start: date, end: date) -> dict[int, tuple[Decimal, Decimal]]:
+    """product_id -> (total_qty, total_cost) from completed, non-consignment,
+    non-zero-cost purchase lines in [start, end] — "موارد استثنا" excludes
+    اشانتیون/zero-cost lines since their price isn't a real market price.
+    """
+    rows = database.execute(
+        select(
+            PurchaseItem.product_id,
+            func.sum(PurchaseItem.quantity),
+            func.sum(PurchaseItem.quantity * PurchaseItem.unit_cost),
+        )
+        .join(Purchase, Purchase.id == PurchaseItem.purchase_id)
+        .where(
+            Purchase.status == DocumentStatus.COMPLETED,
+            PurchaseItem.is_consignment.is_(False),
+            PurchaseItem.unit_cost > 0,
+            func.date(Purchase.created_at) >= start,
+            func.date(Purchase.created_at) <= end,
+        )
+        .group_by(PurchaseItem.product_id)
+    ).all()
+    return {row[0]: (row[1], row[2]) for row in rows}
+
+
+def _period_sale_agg(database: Session, start: date, end: date) -> dict[int, tuple[Decimal, Decimal]]:
+    """product_id -> (total_qty, total_revenue) from completed sale lines in
+    [start, end]."""
+    rows = database.execute(
+        select(
+            SaleItem.product_id,
+            func.sum(SaleItem.quantity),
+            func.sum(SaleItem.quantity * SaleItem.unit_price),
+        )
+        .join(Sale, Sale.id == SaleItem.sale_id)
+        .where(
+            Sale.status == DocumentStatus.COMPLETED,
+            func.date(Sale.created_at) >= start,
+            func.date(Sale.created_at) <= end,
+        )
+        .group_by(SaleItem.product_id)
+    ).all()
+    return {row[0]: (row[1], row[2]) for row in rows}
+
+
+def _inflation_raw_data(
+    database: Session,
+    period1_start: date,
+    period1_end: date,
+    period2_start: date,
+    period2_end: date,
+) -> list[_ProductPeriodRow]:
+    purchase_p1 = _period_purchase_agg(database, period1_start, period1_end)
+    purchase_p2 = _period_purchase_agg(database, period2_start, period2_end)
+    sale_p1 = _period_sale_agg(database, period1_start, period1_end)
+    sale_p2 = _period_sale_agg(database, period2_start, period2_end)
+
+    product_ids = set(purchase_p1) | set(purchase_p2) | set(sale_p1) | set(sale_p2)
+    if not product_ids:
+        return []
+
+    zero = Decimal("0")
+    products = database.execute(
+        select(Product.id, Product.name, Product.category_id, Category.name)
+        .outerjoin(Category, Product.category_id == Category.id)
+        .where(Product.id.in_(product_ids))
+    ).all()
+
+    rows = []
+    for product_id, product_name, category_id, category_name in products:
+        pq1, pc1 = purchase_p1.get(product_id, (zero, zero))
+        pq2, pc2 = purchase_p2.get(product_id, (zero, zero))
+        sq1, sr1 = sale_p1.get(product_id, (zero, zero))
+        sq2, sr2 = sale_p2.get(product_id, (zero, zero))
+        rows.append(
+            _ProductPeriodRow(
+                product_id=product_id,
+                product_name=product_name,
+                category_id=category_id,
+                category_name=category_name,
+                purchase_qty_p1=pq1,
+                purchase_cost_p1=pc1,
+                purchase_qty_p2=pq2,
+                purchase_cost_p2=pc2,
+                sale_qty_p1=sq1,
+                sale_revenue_p1=sr1,
+                sale_qty_p2=sq2,
+                sale_revenue_p2=sr2,
+            )
+        )
+    return rows
+
+
+def _common_purchase_rows(rows: list[_ProductPeriodRow]) -> list[_ProductPeriodRow]:
+    """Cost-side "apples to apples" set: a purchase in *both* periods."""
+    return [r for r in rows if r.purchase_qty_p1 > 0 and r.purchase_qty_p2 > 0]
+
+
+def _common_sale_rows(rows: list[_ProductPeriodRow]) -> list[_ProductPeriodRow]:
+    """Sale-side "apples to apples" set: a sale in *both* periods."""
+    return [r for r in rows if r.sale_qty_p1 > 0 and r.sale_qty_p2 > 0]
+
+
+def price_index(rows: list[_ProductPeriodRow], *, basis: str) -> Decimal | None:
+    """Laspeyres price index, weighted by period-1 quantity (see "روش درست"
+    in the doc) — basis="cost" reads PurchaseItem.unit_cost, basis="price"
+    reads SaleItem.unit_price. Returns the raw ~100-based index (100 = no
+    change); None when fewer than MIN_COMMON_PRODUCTS qualify.
+    """
+    common = _common_purchase_rows(rows) if basis == "cost" else _common_sale_rows(rows)
+    if len(common) < MIN_COMMON_PRODUCTS:
+        return None
+
+    if basis == "cost":
+        denominator = sum((r.purchase_cost_p1 for r in common), Decimal("0"))
+        numerator = sum(
+            ((r.purchase_cost_p2 / r.purchase_qty_p2) * r.purchase_qty_p1 for r in common),
+            Decimal("0"),
+        )
+    else:
+        denominator = sum((r.sale_revenue_p1 for r in common), Decimal("0"))
+        numerator = sum(
+            ((r.sale_revenue_p2 / r.sale_qty_p2) * r.sale_qty_p1 for r in common),
+            Decimal("0"),
+        )
+
+    if denominator == 0:
+        return None
+    return (numerator / denominator) * 100
+
+
+def volume_index(rows: list[_ProductPeriodRow]) -> Decimal | None:
+    """Sales-volume Laspeyres index — same family as price_index but with
+    period-1 price held fixed and quantity varied (see "شاخص حجم فروش" in
+    the doc). Always sale-side; there is no purchase-side volume index.
+    Returns the raw ~100-based index; None when insufficient data.
+    """
+    common = _common_sale_rows(rows)
+    if len(common) < MIN_COMMON_PRODUCTS:
+        return None
+
+    denominator = sum((r.sale_revenue_p1 for r in common), Decimal("0"))
+    numerator = sum(
+        ((r.sale_revenue_p1 / r.sale_qty_p1) * r.sale_qty_p2 for r in common),
+        Decimal("0"),
+    )
+    if denominator == 0:
+        return None
+    return (numerator / denominator) * 100
+
+
+def real_profit_index(cost_inflation_pct: Decimal | None, price_inflation_pct: Decimal | None) -> Decimal | None:
+    """شاخص سود واقعی = تورم فروش − تورم خرید. Positive: sale prices are
+    outrunning cost prices (margin improving); negative: costs are outrunning
+    sale prices (margin eroding) even if nominal sales/profit look bigger.
+    """
+    if cost_inflation_pct is None or price_inflation_pct is None:
+        return None
+    return price_inflation_pct - cost_inflation_pct
+
+
+def diagnose_status(
+    price_inflation_pct: Decimal | None, volume_index_pct: Decimal | None
+) -> dict | None:
+    """Pure function (no query) — the 4-quadrant matrix from "تشخیص وضعیت
+    اقتصادی فروشگاه" in the doc. Takes only the sign of the two already-
+    computed indices and returns one of four pre-written labels + a summary
+    sentence built from a fixed per-quadrant template with the actual
+    numbers interpolated — never free-generated text. None (insufficient
+    data) propagates from either input being None.
+    """
+    if price_inflation_pct is None or volume_index_pct is None:
+        return None
+
+    price_up = price_inflation_pct >= 0
+    volume_up = volume_index_pct >= 0
+
+    if price_up and volume_up:
+        label, title = "healthy_growth", "رونق واقعی و سالم"
+        clause = "قیمت‌ها بالاتر رفته و حجم واقعی فروش هم بیشتر شده — رشد سالم است."
+    elif price_up and not volume_up:
+        label, title = "stagflation", "رکود تورمی"
+        clause = (
+            "قیمت‌ها بالاتر رفته اما حجم واقعی فروش کم شده — درآمد اسمی می‌تواند "
+            "رشد کرده به‌نظر برسد بدون اینکه فروش واقعی بیشتر شده باشد."
+        )
+    elif not price_up and volume_up:
+        label, title = "successful_price_competition", "رقابت قیمتی موفق"
+        clause = "قیمت‌ها پایین‌تر آمده ولی حجم فروش بیشتر شده — احتمالاً استراتژی قیمت‌گذاری رقابتی جواب داده است."
+    else:
+        label, title = "real_price_recession", "رکود واقعی/قیمتی"
+        clause = "هم قیمت‌ها و هم حجم واقعی فروش کاهش یافته — نشانه‌ی رکود واقعی در تقاضاست."
+
+    # Never interpolate a raw signed number here ("-10%") — always pick the
+    # directional word and show the magnitude, matching how "already expired"
+    # got a distinct label instead of looking like a generic red badge in the
+    # near-expiry feature (see docs/inflation-rate-report.md's explicit
+    # negative-inflation-isn't-an-error note).
+    price_word = "تورم فروش" if price_inflation_pct >= 0 else "کاهش قیمت فروش"
+    volume_word = "رشد" if volume_index_pct >= 0 else "رکود"
+    summary_sentence = (
+        f"این بازه: {price_word} {abs(price_inflation_pct):.0f}٪، {volume_word} حجم "
+        f"{abs(volume_index_pct):.0f}٪ — وضعیت: {title}. {clause}"
+    )
+
+    return {"label": label, "title": title, "summary_sentence": summary_sentence}
+
+
+def revenue_inflation_impact(
+    database: Session,
+    *,
+    price_idx: Decimal | None,
+    period1_start: date,
+    period1_end: date,
+    period2_start: date,
+    period2_end: date,
+) -> dict:
+    """Nominal vs. inflation-adjusted ("real") revenue growth — see "گزارش
+    تکمیلی: تاثیر تورم بر درآمد" in the doc. Nominal revenue is literally
+    daily_sales_summary()'s own total (summed over the range), so this
+    number always matches the dashboard for the same dates — no parallel
+    revenue calculation.
+    """
+    nominal_p1 = sum(
+        (row["total_sales"] for row in daily_sales_summary(database, from_date=period1_start, to_date=period1_end)),
+        Decimal("0"),
+    )
+    nominal_p2 = sum(
+        (row["total_sales"] for row in daily_sales_summary(database, from_date=period2_start, to_date=period2_end)),
+        Decimal("0"),
+    )
+
+    nominal_growth_pct = ((nominal_p2 - nominal_p1) / nominal_p1 * 100) if nominal_p1 != 0 else None
+
+    real_p2 = None
+    real_growth_pct = None
+    if price_idx is not None and price_idx != 0 and nominal_p1 != 0:
+        real_p2 = nominal_p2 / (price_idx / 100)
+        real_growth_pct = (real_p2 - nominal_p1) / nominal_p1 * 100
+        # Money everywhere else in this app is Numeric(14, 2) — quantize
+        # here too so the UI doesn't show a long division tail (e.g.
+        # "...712.52193744...") that every other revenue figure never has.
+        real_p2 = real_p2.quantize(Decimal("0.01"))
+
+    return {
+        "nominal_revenue_p1": nominal_p1,
+        "nominal_revenue_p2": nominal_p2,
+        "real_revenue_p2": real_p2,
+        "nominal_growth_pct": nominal_growth_pct,
+        "real_growth_pct": real_growth_pct,
+    }
+
+
+def category_inflation_breakdown(rows: list[_ProductPeriodRow]) -> list[dict]:
+    """Same price/volume/diagnosis computation as the store-wide numbers,
+    grouped by Category (see "شکست بر اساس دسته‌بندی کالا"). Uncategorized
+    products are pooled under a single "سایر" bucket. The MIN_COMMON_PRODUCTS
+    threshold is re-applied independently per category — a category can be
+    insufficient even when the store-wide total is not.
+    """
+    groups: dict[int | None, list[_ProductPeriodRow]] = defaultdict(list)
+    names: dict[int | None, str] = {}
+    for row in rows:
+        groups[row.category_id].append(row)
+        names[row.category_id] = row.category_name or "سایر"
+
+    result = []
+    for category_id, group_rows in groups.items():
+        cost_idx = price_index(group_rows, basis="cost")
+        price_idx = price_index(group_rows, basis="price")
+        volume_idx = volume_index(group_rows)
+
+        cost_pct = (cost_idx - 100) if cost_idx is not None else None
+        price_pct = (price_idx - 100) if price_idx is not None else None
+        volume_pct = (volume_idx - 100) if volume_idx is not None else None
+
+        result.append(
+            {
+                "category_id": category_id,
+                "category_name": names[category_id],
+                "cost_inflation_pct": cost_pct,
+                "price_inflation_pct": price_pct,
+                "volume_index_pct": volume_pct,
+                "diagnosis": diagnose_status(price_pct, volume_pct),
+                "insufficient_data": price_pct is None or volume_pct is None,
+            }
+        )
+
+    result.sort(key=lambda item: (item["category_name"] == "سایر", item["category_name"]))
+    return result
+
+
+def biggest_price_increases(rows: list[_ProductPeriodRow], *, limit: int = 10) -> list[dict]:
+    """Products with a sale in both periods, ranked by biggest %% price
+    increase — the actionable twin of the headline price index (see
+    "جزئیات UX" in the doc)."""
+    result = []
+    for r in _common_sale_rows(rows):
+        price1 = r.sale_revenue_p1 / r.sale_qty_p1
+        price2 = r.sale_revenue_p2 / r.sale_qty_p2
+        if price1 == 0:
+            continue
+        result.append(
+            {
+                "product_id": r.product_id,
+                "product_name": r.product_name,
+                "price_period1": price1,
+                "price_period2": price2,
+                "pct_change": (price2 - price1) / price1 * 100,
+            }
+        )
+    result.sort(key=lambda item: item["pct_change"], reverse=True)
+    return result[:limit]
+
+
+def biggest_volume_decliners(rows: list[_ProductPeriodRow], *, limit: int = 10) -> list[dict]:
+    """Products with a sale in both periods, ranked by biggest %% drop in
+    quantity sold — "کالاهای با بیشترین افت حجم فروش" in the doc."""
+    result = []
+    for r in _common_sale_rows(rows):
+        if r.sale_qty_p1 == 0:
+            continue
+        result.append(
+            {
+                "product_id": r.product_id,
+                "product_name": r.product_name,
+                "quantity_period1": r.sale_qty_p1,
+                "quantity_period2": r.sale_qty_p2,
+                "pct_change": (r.sale_qty_p2 - r.sale_qty_p1) / r.sale_qty_p1 * 100,
+            }
+        )
+    result.sort(key=lambda item: item["pct_change"])
+    return result[:limit]
+
+
+def inflation_rate(
+    database: Session,
+    *,
+    period1_start: date,
+    period1_end: date,
+    period2_start: date,
+    period2_end: date,
+) -> dict:
+    """Combined internal inflation-rate report — see
+    docs/inflation-rate-report.md. One shared grouped dataset feeds every
+    number below; nothing here duplicates a query.
+    """
+    rows = _inflation_raw_data(database, period1_start, period1_end, period2_start, period2_end)
+
+    cost_idx = price_index(rows, basis="cost")
+    price_idx = price_index(rows, basis="price")
+    volume_idx = volume_index(rows)
+
+    cost_inflation_pct = (cost_idx - 100) if cost_idx is not None else None
+    price_inflation_pct = (price_idx - 100) if price_idx is not None else None
+    volume_index_pct = (volume_idx - 100) if volume_idx is not None else None
+
+    return {
+        "cost_inflation_pct": cost_inflation_pct,
+        "price_inflation_pct": price_inflation_pct,
+        "volume_index_pct": volume_index_pct,
+        "real_profit_index_pct": real_profit_index(cost_inflation_pct, price_inflation_pct),
+        "insufficient_data": price_inflation_pct is None or volume_index_pct is None,
+        "diagnosis": diagnose_status(price_inflation_pct, volume_index_pct),
+        "revenue_impact": revenue_inflation_impact(
+            database,
+            price_idx=price_idx,
+            period1_start=period1_start,
+            period1_end=period1_end,
+            period2_start=period2_start,
+            period2_end=period2_end,
+        ),
+        "top_price_increases": biggest_price_increases(rows),
+        "top_volume_decliners": biggest_volume_decliners(rows),
+        "by_category": category_inflation_breakdown(rows),
+    }
+
+
+def net_profit(database: Session, period_start: date, period_end: date) -> dict:
+    """سود خالص = سود ناخالص − هزینه‌های عملیاتی — see
+    docs/expense-management.md. Gross profit reuses daily_sales_summary()'s
+    own per-day "profit" column (the exact figure already shown on the
+    dashboard/sales report), not a new parallel calculation.
+    services/margin.py's calculate_margin_pct is a different concept (a
+    single transaction's % margin, not an absolute period total) with no
+    direct call site here — same conclusion reached for
+    revenue_inflation_impact() above.
+    """
+    gross_profit = sum(
+        (row["profit"] for row in daily_sales_summary(database, from_date=period_start, to_date=period_end)),
+        Decimal("0"),
+    )
+    total_expenses = total_operating_expenses(database, period_start, period_end)
+    return {
+        "gross_profit": gross_profit,
+        "total_operating_expenses": total_expenses,
+        "net_profit": gross_profit - total_expenses,
+    }

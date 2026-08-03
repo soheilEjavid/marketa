@@ -8,6 +8,7 @@ import { Checks } from "./pages/Checks";
 import { CustomerDetail } from "./pages/CustomerDetail";
 import { Customers } from "./pages/Customers";
 import { Dashboard } from "./pages/Dashboard";
+import { Expenses } from "./pages/Expenses";
 import { InventoryHistory } from "./pages/InventoryHistory";
 import { Login } from "./pages/Login";
 import { LoyaltyClub } from "./pages/LoyaltyClub";
@@ -114,6 +115,8 @@ export default function App() {
         );
       case "reports":
         return <Reports onNavigate={(page) => setView({ page })} />;
+      case "expenses":
+        return <Expenses />;
       case "supplier-detail":
         return (
           <SupplierDetail

@@ -597,6 +597,115 @@ export type NearExpiryRow = {
   status: "expired" | "red" | "orange";
 };
 
+export type InflationDiagnosis = {
+  label: "healthy_growth" | "stagflation" | "successful_price_competition" | "real_price_recession";
+  title: string;
+  summary_sentence: string;
+};
+
+export type RevenueInflationImpact = {
+  nominal_revenue_p1: string;
+  nominal_revenue_p2: string;
+  real_revenue_p2: string | null;
+  nominal_growth_pct: string | null;
+  real_growth_pct: string | null;
+};
+
+export type CategoryInflationRow = {
+  category_id: number | null;
+  category_name: string;
+  cost_inflation_pct: string | null;
+  price_inflation_pct: string | null;
+  volume_index_pct: string | null;
+  diagnosis: InflationDiagnosis | null;
+  insufficient_data: boolean;
+};
+
+export type PriceIncreaseRow = {
+  product_id: number;
+  product_name: string;
+  price_period1: string;
+  price_period2: string;
+  pct_change: string;
+};
+
+export type VolumeDeclineRow = {
+  product_id: number;
+  product_name: string;
+  quantity_period1: string;
+  quantity_period2: string;
+  pct_change: string;
+};
+
+export type InflationRateReport = {
+  cost_inflation_pct: string | null;
+  price_inflation_pct: string | null;
+  volume_index_pct: string | null;
+  real_profit_index_pct: string | null;
+  insufficient_data: boolean;
+  diagnosis: InflationDiagnosis | null;
+  revenue_impact: RevenueInflationImpact;
+  top_price_increases: PriceIncreaseRow[];
+  top_volume_decliners: VolumeDeclineRow[];
+  by_category: CategoryInflationRow[];
+};
+
+export type ExpensePaymentMethod = "cash" | "bank";
+
+export type Expense = {
+  id: number;
+  category: string;
+  amount: string;
+  date: string;
+  description: string | null;
+  is_recurring: boolean;
+  payment_method: ExpensePaymentMethod;
+  receipt_image_url: string | null;
+  created_by_user_id: number | null;
+};
+
+export type ExpenseInput = {
+  category: string;
+  amount: number;
+  date: string;
+  description?: string | null;
+  is_recurring?: boolean;
+  payment_method: ExpensePaymentMethod;
+  receipt_image_url?: string | null;
+};
+
+export type SalaryAdvance = {
+  id: number;
+  employee_id: number;
+  employee_name: string;
+  amount: string;
+  date: string;
+  notes: string | null;
+  settled_in_payment_id: number | null;
+};
+
+export type SalaryPayment = {
+  id: number;
+  employee_id: number;
+  employee_name: string;
+  period_year: number;
+  period_month: number;
+  base_amount: string;
+  bonus_amount: string;
+  deductions_amount: string;
+  net_amount: string;
+  payment_method: ExpensePaymentMethod;
+  paid_at: string;
+  notes: string | null;
+  created_by_user_id: number | null;
+};
+
+export type NetProfitReport = {
+  gross_profit: string;
+  total_operating_expenses: string;
+  net_profit: string;
+};
+
 export type OutstandingConsignmentRow = {
   purchase_item_id: number;
   purchase_id: number;

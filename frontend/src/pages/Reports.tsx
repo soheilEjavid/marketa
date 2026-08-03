@@ -10,8 +10,10 @@ import {
   Clock,
   DollarSign,
   Gift,
+  Info,
   Moon,
   Package,
+  Percent,
   ReceiptText,
   TrendingUp,
   UserRound,
@@ -21,8 +23,10 @@ import {
 
 import {
   getCashierPerformance,
+  getInflationRate,
   getLoyaltyRedemptions,
   getNearExpiryProducts,
+  getNetProfit,
   getOutstandingConsignment,
   getSalesPage,
   getShifts,
@@ -34,13 +38,17 @@ import { SaleDetailView } from "../components/SaleDetailView";
 import type { Page } from "../components/Sidebar";
 import { useI18n } from "../i18n";
 import { calculateInvoiceMargin, calculateMarginPct, formatMarginPct, getMarginStatus } from "../lib/margin";
-import { isoToJalaliStr } from "../utils/jalali";
+import { canManageExpenses } from "../permissions";
+import { getSession } from "../session";
+import { getJalaliMonthDays, isoToJalaliStr, parseJalaliDateString, todayJalali, toGregorian } from "../utils/jalali";
 import type {
   CashierPerformanceRow,
   CashierShift,
   DeadStockRow,
+  InflationRateReport,
   LoyaltyRedemptionRow,
   NearExpiryRow,
+  NetProfitReport,
   OutstandingConsignmentRow,
   Sale,
 } from "../types";
@@ -51,6 +59,7 @@ type ReportTab =
   | "stock"
   | "dead-stock"
   | "near-expiry"
+  | "inflation-rate"
   | "cashiers"
   | "balances"
   | "consignment"
@@ -120,17 +129,75 @@ function reportBadgeClass(value: number): string {
   return "metric-badge metric-badge-neutral";
 }
 
+/** Same rounding convention as formatMarginPct (lib/margin.ts) — always
+ * shows an explicit +/- sign so a decline never reads as a bare, confusing
+ * negative number (see docs/inflation-rate-report.md). */
+function formatSignedPct(value: number, numberFn: (value: number) => string): string {
+  const rounded = Math.round(value * 10) / 10;
+  const safeRounded = Object.is(rounded, -0) ? 0 : rounded;
+  const sign = safeRounded > 0 ? "+" : safeRounded < 0 ? "−" : "";
+  return `${sign}${numberFn(Math.abs(safeRounded))}٪`;
+}
+
 const tabs: ReportTabDefinition[] = [
   { key: "sales", label: "sales", Icon: BarChart3 },
   { key: "products", label: "products", Icon: TrendingUp },
   { key: "stock", label: "inventory", Icon: ReceiptText },
   { key: "dead-stock", label: "deadStockTitle", Icon: Moon },
   { key: "near-expiry", label: "nearExpiryTitle", Icon: CalendarClock },
+  { key: "inflation-rate", label: "inflationRateTitle", Icon: Percent },
   { key: "cashiers", label: "cashierPerformance", Icon: UserRound },
   { key: "balances", label: "balances", Icon: UsersRound },
   { key: "consignment", label: "consignmentGoods", Icon: Package },
   { key: "loyalty", label: "loyaltyRedemptions", Icon: Gift },
 ];
+
+function toIsoDate(gy: number, gm: number, gd: number): string {
+  return `${gy}-${String(gm).padStart(2, "0")}-${String(gd).padStart(2, "0")}`;
+}
+
+/** "این ماه در مقابل ماه قبل" / "امسال در مقابل پارسال" period presets,
+ * computed on the Jalali calendar (this app's primary calendar) then
+ * converted to the ISO dates the API expects. */
+function jalaliPresetRange(preset: "this-month-vs-last" | "this-year-vs-last"): {
+  period1Start: string;
+  period1End: string;
+  period2Start: string;
+  period2End: string;
+} {
+  const todayParsed = parseJalaliDateString(todayJalali())!;
+  const { year: ty, month: tm, day: td } = todayParsed;
+
+  if (preset === "this-month-vs-last") {
+    let lastMonthYear = ty;
+    let lastMonth = tm - 1;
+    if (lastMonth === 0) {
+      lastMonth = 12;
+      lastMonthYear -= 1;
+    }
+    const lastMonthDays = getJalaliMonthDays(lastMonthYear, lastMonth);
+    // Cap period 1 at the SAME day-count as period 2 (which always stops at
+    // today, since the current month isn't over yet). Comparing a full
+    // 31-day month against an in-progress ~13-day month would always show
+    // a large apparent revenue "decline" in period 2 — not because of any
+    // real business change, just because fewer days have elapsed. A fair
+    // like-for-like comparison needs equal day counts on both sides.
+    const period1Day = Math.min(td, lastMonthDays);
+    return {
+      period1Start: toIsoDate(...toGregorian(lastMonthYear, lastMonth, 1)),
+      period1End: toIsoDate(...toGregorian(lastMonthYear, lastMonth, period1Day)),
+      period2Start: toIsoDate(...toGregorian(ty, tm, 1)),
+      period2End: toIsoDate(...toGregorian(ty, tm, td)),
+    };
+  }
+
+  return {
+    period1Start: toIsoDate(...toGregorian(ty - 1, 1, 1)),
+    period1End: toIsoDate(...toGregorian(ty - 1, tm, td)),
+    period2Start: toIsoDate(...toGregorian(ty, 1, 1)),
+    period2End: toIsoDate(...toGregorian(ty, tm, td)),
+  };
+}
 
 type ReportsProps = {
   onNavigate?: (page: Page) => void;
@@ -200,6 +267,25 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // "سود خالص" next to the existing gross-profit figure (doc:
+  // docs/expense-management.md) — same admin+manager gate as the backend
+  // route, and the same implicit 30-day range daily-sales already shows
+  // (no new date picker introduced just for this one summary).
+  const canSeeNetProfit = canManageExpenses(getSession()?.role ?? "");
+  const [netProfitReport, setNetProfitReport] = useState<NetProfitReport | null>(null);
+
+  useEffect(() => {
+    if (!canSeeNetProfit) return;
+    const today = new Date();
+    const periodEnd = today.toISOString().slice(0, 10);
+    const from = new Date(today);
+    from.setDate(from.getDate() - 30);
+    const periodStart = from.toISOString().slice(0, 10);
+    getNetProfit({ periodStart, periodEnd })
+      .then(setNetProfitReport)
+      .catch(() => setNetProfitReport(null));
+  }, [canSeeNetProfit]);
 
   const loadInvoiceList = useCallback(async () => {
     setInvoiceListLoading(true);
@@ -296,6 +382,32 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
     loadNearExpiry();
   }, [loadNearExpiry]);
 
+  const [inflationPeriod, setInflationPeriod] = useState(() => jalaliPresetRange("this-month-vs-last"));
+  const [inflationReport, setInflationReport] = useState<InflationRateReport | null>(null);
+  const [inflationLoading, setInflationLoading] = useState(true);
+
+  const loadInflationRate = useCallback(async () => {
+    setInflationLoading(true);
+    try {
+      setInflationReport(
+        await getInflationRate({
+          period1Start: inflationPeriod.period1Start,
+          period1End: inflationPeriod.period1End,
+          period2Start: inflationPeriod.period2Start,
+          period2End: inflationPeriod.period2End,
+        }),
+      );
+    } catch {
+      setInflationReport(null);
+    } finally {
+      setInflationLoading(false);
+    }
+  }, [inflationPeriod]);
+
+  useEffect(() => {
+    loadInflationRate();
+  }, [loadInflationRate]);
+
   const [cashierPerformance, setCashierPerformance] = useState<CashierPerformanceRow[]>([]);
   const [shifts, setShifts] = useState<CashierShift[]>([]);
   const [cashierLoading, setCashierLoading] = useState(true);
@@ -380,6 +492,30 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
             <h2>{t("sales")}</h2>
             <span className="subtle-chip">{t("salesTrend")}</span>
           </div>
+
+          {canSeeNetProfit && netProfitReport && (
+            <section className="metric-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", marginBottom: 16 }}>
+              <article className="metric-card">
+                <p>{t("grossProfitLabel")}</p>
+                <strong className={reportBadgeClass(Number(netProfitReport.gross_profit))}>
+                  {renderMoney(Number(netProfitReport.gross_profit))}
+                </strong>
+              </article>
+              <article className="metric-card">
+                <p>{t("totalOperatingExpensesLabel")}</p>
+                <strong>{renderMoney(Number(netProfitReport.total_operating_expenses))}</strong>
+              </article>
+              <article className="metric-card" title={t("netProfitTooltip")}>
+                <p>
+                  {t("netProfitTitle")} <Info size={12} style={{ verticalAlign: "middle" }} />
+                </p>
+                <strong className={reportBadgeClass(Number(netProfitReport.net_profit))}>
+                  {renderMoney(Number(netProfitReport.net_profit))}
+                </strong>
+              </article>
+            </section>
+          )}
+
           <div className="report-table">
             <div className="report-table-row report-cols-5 report-head">
               <span className="report-header-cell">
@@ -771,6 +907,263 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
               <div className="empty-state compact">{t("systemOnline")}</div>
             )}
           </div>
+        </section>
+      )}
+
+      {!loading && tab === "inflation-rate" && (
+        <section className="panel report-table-wrap">
+          <div className="panel-heading">
+            <div>
+              <h2>{t("inflationRateTitle")}</h2>
+              <span className="subtle-chip" style={{ marginTop: 6, display: "inline-block" }}>
+                {t("inflationRateSubtitle")}
+              </span>
+            </div>
+          </div>
+
+          <div className="date-range-filter" style={{ flexWrap: "wrap", rowGap: 12 }}>
+            <div>
+              <small className="field-hint">{t("periodOne")}</small>
+              <div className="date-range-filter">
+                <JalaliDatePicker
+                  value={inflationPeriod.period1Start}
+                  onChange={(value) => setInflationPeriod((prev) => ({ ...prev, period1Start: value }))}
+                />
+                <span>—</span>
+                <JalaliDatePicker
+                  value={inflationPeriod.period1End}
+                  onChange={(value) => setInflationPeriod((prev) => ({ ...prev, period1End: value }))}
+                />
+              </div>
+            </div>
+            <div>
+              <small className="field-hint">{t("periodTwo")}</small>
+              <div className="date-range-filter">
+                <JalaliDatePicker
+                  value={inflationPeriod.period2Start}
+                  onChange={(value) => setInflationPeriod((prev) => ({ ...prev, period2Start: value }))}
+                />
+                <span>—</span>
+                <JalaliDatePicker
+                  value={inflationPeriod.period2End}
+                  onChange={(value) => setInflationPeriod((prev) => ({ ...prev, period2End: value }))}
+                />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setInflationPeriod(jalaliPresetRange("this-month-vs-last"))}
+              >
+                {t("presetThisMonthVsLast")}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setInflationPeriod(jalaliPresetRange("this-year-vs-last"))}
+              >
+                {t("presetThisYearVsLast")}
+              </button>
+            </div>
+          </div>
+
+          {inflationLoading ? (
+            <div className="empty-state compact">{t("loading")}</div>
+          ) : !inflationReport || inflationReport.insufficient_data ? (
+            <div className="empty-state compact">{t("insufficientInflationData")}</div>
+          ) : (
+            <>
+              {inflationReport.diagnosis && (
+                <div className="report-meta-row">
+                  <p style={{ margin: 0 }}>{inflationReport.diagnosis.summary_sentence}</p>
+                </div>
+              )}
+
+              <details className="inflation-glossary" style={{ marginTop: 12 }}>
+                <summary>{t("inflationGlossaryTitle")}</summary>
+                <ul>
+                  <li>{t("glossaryCostInflation")}</li>
+                  <li>{t("glossaryPriceInflation")}</li>
+                  <li>{t("glossaryVolumeIndex")}</li>
+                  <li>{t("glossaryRealProfitIndex")}</li>
+                  <li>{t("glossaryRevenueImpact")}</li>
+                  <li>{t("glossaryDiagnosisHealthy")}</li>
+                  <li>{t("glossaryDiagnosisStagflation")}</li>
+                  <li>{t("glossaryDiagnosisCompetitive")}</li>
+                  <li>{t("glossaryDiagnosisRealRecession")}</li>
+                </ul>
+              </details>
+
+              <section className="metric-grid" style={{ marginTop: 12 }}>
+                <article className="metric-card">
+                  <p>{t("costInflation")}</p>
+                  <strong className={reportBadgeClass(Number(inflationReport.cost_inflation_pct))}>
+                    {inflationReport.cost_inflation_pct === null
+                      ? "—"
+                      : formatSignedPct(Number(inflationReport.cost_inflation_pct), number)}
+                  </strong>
+                </article>
+                <article className="metric-card">
+                  <p>{t("priceInflation")}</p>
+                  <strong className={reportBadgeClass(Number(inflationReport.price_inflation_pct))}>
+                    {formatSignedPct(Number(inflationReport.price_inflation_pct), number)}
+                  </strong>
+                </article>
+                <article className="metric-card">
+                  <p>{t("volumeIndex")}</p>
+                  <strong className={reportBadgeClass(Number(inflationReport.volume_index_pct))}>
+                    {formatSignedPct(Number(inflationReport.volume_index_pct), number)}
+                  </strong>
+                </article>
+                <article className="metric-card">
+                  <p>{t("realProfitIndex")}</p>
+                  <strong className={reportBadgeClass(Number(inflationReport.real_profit_index_pct))}>
+                    {inflationReport.real_profit_index_pct === null
+                      ? "—"
+                      : formatSignedPct(Number(inflationReport.real_profit_index_pct), number)}
+                  </strong>
+                </article>
+              </section>
+
+              <div className="panel-heading" style={{ marginTop: 24 }}>
+                <h2>{t("revenueImpactTitle")}</h2>
+              </div>
+              <section className="metric-grid" style={{ gridTemplateColumns: "repeat(4, minmax(0, 1fr))" }}>
+                <article className="metric-card">
+                  <p>
+                    {t("nominalRevenue")} — {t("periodOne")}
+                  </p>
+                  <strong>{renderMoney(Number(inflationReport.revenue_impact.nominal_revenue_p1))}</strong>
+                </article>
+                <article className="metric-card">
+                  <p>
+                    {t("nominalRevenue")} — {t("periodTwo")}
+                  </p>
+                  <strong>{renderMoney(Number(inflationReport.revenue_impact.nominal_revenue_p2))}</strong>
+                  {inflationReport.revenue_impact.nominal_growth_pct !== null && (
+                    <small className={reportBadgeClass(Number(inflationReport.revenue_impact.nominal_growth_pct))}>
+                      {formatSignedPct(Number(inflationReport.revenue_impact.nominal_growth_pct), number)}{" "}
+                      {t("nominalGrowth")}
+                    </small>
+                  )}
+                </article>
+                <article className="metric-card">
+                  <p>{t("realRevenue")}</p>
+                  <strong>
+                    {inflationReport.revenue_impact.real_revenue_p2 === null
+                      ? "—"
+                      : renderMoney(Number(inflationReport.revenue_impact.real_revenue_p2))}
+                  </strong>
+                  {inflationReport.revenue_impact.real_growth_pct !== null && (
+                    <small className={reportBadgeClass(Number(inflationReport.revenue_impact.real_growth_pct))}>
+                      {formatSignedPct(Number(inflationReport.revenue_impact.real_growth_pct), number)} {t("realGrowth")}
+                    </small>
+                  )}
+                </article>
+              </section>
+
+              <div className="panel-heading" style={{ marginTop: 24 }}>
+                <h2>{t("categoryBreakdownTitle")}</h2>
+              </div>
+              <div className="report-table report-table-wrap">
+                <div className="report-table-row report-cols-5 report-head">
+                  <span className="report-header-cell">{t("category")}</span>
+                  <span className="report-header-cell">{t("costInflation")}</span>
+                  <span className="report-header-cell">{t("priceInflation")}</span>
+                  <span className="report-header-cell">{t("volumeIndex")}</span>
+                  <span className="report-header-cell" />
+                </div>
+                {inflationReport.by_category.map((row) => (
+                  <div className="report-table-row report-cols-5 animated-line" key={row.category_id ?? "none"}>
+                    <strong>{row.category_name}</strong>
+                    {row.insufficient_data ? (
+                      <span className="muted-text" style={{ gridColumn: "span 3" }}>
+                        {t("insufficientInflationData")}
+                      </span>
+                    ) : (
+                      <>
+                        <span className={reportBadgeClass(Number(row.cost_inflation_pct))}>
+                          {row.cost_inflation_pct === null ? "—" : formatSignedPct(Number(row.cost_inflation_pct), number)}
+                        </span>
+                        <span className={reportBadgeClass(Number(row.price_inflation_pct))}>
+                          {formatSignedPct(Number(row.price_inflation_pct), number)}
+                        </span>
+                        <span className={reportBadgeClass(Number(row.volume_index_pct))}>
+                          {formatSignedPct(Number(row.volume_index_pct), number)}
+                        </span>
+                      </>
+                    )}
+                    <span className="muted-text">{row.diagnosis?.title ?? "—"}</span>
+                  </div>
+                ))}
+              </div>
+
+              <div className="inflation-stacked-tables" style={{ marginTop: 24 }}>
+                <div>
+                  <div className="panel-heading">
+                    <h2>{t("topPriceIncreasesTitle")}</h2>
+                  </div>
+                  <div className="report-table report-table-wrap">
+                    <div className="report-table-row report-cols-3 report-head">
+                      <span className="report-header-cell">{t("product")}</span>
+                      <span className="report-header-cell">{t("priceInflation")}</span>
+                      <span className="report-header-cell" />
+                    </div>
+                    {inflationReport.top_price_increases.length > 0 ? (
+                      inflationReport.top_price_increases.map((row) => (
+                        <div className="report-table-row report-cols-3 animated-line" key={row.product_id}>
+                          <strong>{row.product_name}</strong>
+                          <span className="muted-text" style={{ justifySelf: "start" }}>
+                            <span style={{ direction: "ltr", unicodeBidi: "isolate" }}>
+                              {number(Number(row.price_period1))} → {number(Number(row.price_period2))}
+                            </span>{" "}
+                            {t("toman")}
+                          </span>
+                          <span className={reportBadgeClass(Number(row.pct_change))}>
+                            {formatSignedPct(Number(row.pct_change), number)}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="empty-state compact">{t("noData")}</div>
+                    )}
+                  </div>
+                </div>
+                <div style={{ marginTop: 24 }}>
+                  <div className="panel-heading">
+                    <h2>{t("topVolumeDeclinersTitle")}</h2>
+                  </div>
+                  <div className="report-table report-table-wrap">
+                    <div className="report-table-row report-cols-3 report-head">
+                      <span className="report-header-cell">{t("product")}</span>
+                      <span className="report-header-cell">{t("quantity")}</span>
+                      <span className="report-header-cell" />
+                    </div>
+                    {inflationReport.top_volume_decliners.length > 0 ? (
+                      inflationReport.top_volume_decliners.map((row) => (
+                        <div className="report-table-row report-cols-3 animated-line" key={row.product_id}>
+                          <strong>{row.product_name}</strong>
+                          <span className="muted-text" style={{ direction: "ltr", justifySelf: "start" }}>
+                            {number(Number(row.quantity_period1))} → {number(Number(row.quantity_period2))}
+                          </span>
+                          <span className={reportBadgeClass(Number(row.pct_change))}>
+                            {formatSignedPct(Number(row.pct_change), number)}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="empty-state compact">{t("noData")}</div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          <p className="muted-text" style={{ marginTop: 16, fontSize: 12 }}>
+            {t("inflationLimitationNote")}
+          </p>
         </section>
       )}
 

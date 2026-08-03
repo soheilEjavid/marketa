@@ -7,6 +7,7 @@ from typing import Literal
 
 from app.models.entities import User as UserModel
 from app.schemas.loyalty import ChurnCouponIssueResult
+from app.schemas.expense import NetProfitReport
 from app.schemas.reports import (
     BirthdayCustomerRow,
     CashierPerformanceRow,
@@ -15,6 +16,7 @@ from app.schemas.reports import (
     CustomerTierRow,
     DailySalesSummary,
     DeadStockRow,
+    InflationRateReport,
     InventorySummary,
     LowStockReport,
     LoyaltyLiabilityRow,
@@ -101,6 +103,38 @@ async def get_near_expiry(
     _: UserModel = Depends(require_role(*READ_ROLES)),
 ):
     return report_service.near_expiry_products(database, red_days=red_days, orange_days=orange_days)
+
+
+@router.get("/inflation-rate", response_model=InflationRateReport)
+async def get_inflation_rate(
+    database: DatabaseSession,
+    period1_start: date,
+    period1_end: date,
+    period2_start: date,
+    period2_end: date,
+    _: UserModel = Depends(require_role(*READ_ROLES)),
+):
+    return report_service.inflation_rate(
+        database,
+        period1_start=period1_start,
+        period1_end=period1_end,
+        period2_start=period2_start,
+        period2_end=period2_end,
+    )
+
+
+@router.get("/net-profit", response_model=NetProfitReport)
+async def get_net_profit(
+    database: DatabaseSession,
+    period_start: date,
+    period_end: date,
+    # Aggregate payroll total only (no per-employee breakdown) — safe for
+    # the same broader admin+manager audience as /expenses, per the doc's
+    # explicit note that the aggregate number is less sensitive than the
+    # per-employee detail behind /salary-payments (admin-only).
+    _: UserModel = Depends(require_role("admin", "manager")),
+):
+    return report_service.net_profit(database, period_start, period_end)
 
 
 @router.get("/cashier-performance", response_model=list[CashierPerformanceRow])
