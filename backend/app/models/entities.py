@@ -12,6 +12,7 @@ from sqlalchemy import (
     Numeric,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -508,4 +509,97 @@ class LoyaltySettings(Base, TimestampMixin):
     # the feature (see services/loyalty.py).
     churn_recovery_coupon_points: Mapped[int | None] = mapped_column(Integer)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer)
+
+
+class ExpensePaymentMethod(StrEnum):
+    """Deliberately just cash/bank — distinct from PaymentMethod (sales/
+    purchases), whose CARD/CREDIT/CHECK/LOYALTY values describe a
+    customer-facing tender, not how the store itself paid out an operating
+    expense or a salary. See docs/expense-management.md."""
+
+    CASH = "cash"
+    BANK = "bank"
+
+
+class Expense(Base, TimestampMixin):
+    """A general/fixed operating expense (rent, utilities, insurance,
+    repairs, ads, etc.) — see docs/expense-management.md. `category` is a
+    plain free-text column, not a foreign key to `Category`: that table is
+    product-specific (globally-unique `name`, back-populated only from
+    `Product`), and reusing it here would let an expense category collide
+    with a product category of the same name. A `<datalist>` of distinct
+    existing values on the frontend gives the same "manageable, not a
+    locked enum" feel without that coupling.
+    """
+
+    __tablename__ = "expenses"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    category: Mapped[str] = mapped_column(String(100), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    date: Mapped[date] = mapped_column(Date, index=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    is_recurring: Mapped[bool] = mapped_column(Boolean, default=False)
+    payment_method: Mapped[ExpensePaymentMethod] = mapped_column(Enum(ExpensePaymentMethod))
+    receipt_image_url: Mapped[str | None] = mapped_column(Text)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer)
+
+
+class SalaryPayment(Base, TimestampMixin):
+    """One real, explicit payroll payment for one employee for one month —
+    never auto-generated (see docs/expense-management.md's "ماهانه و
+    تکرارشونده، ولی هر پرداخت واقعی جداگانه ثبت می‌شود"). `net_amount` is
+    always computed by services/expenses.py as
+    base_amount + bonus_amount - deductions_amount — never a free-standing
+    user input, matching how Sale.total/Purchase.total are always derived
+    from their line items rather than typed separately.
+
+    The (employee_id, period_year, period_month) unique constraint is a
+    deliberate safety addition beyond the doc's literal spec: this is
+    payroll money — silently allowing two payment rows for the same
+    employee/month would double-count in net_profit() and in the
+    employee's own pay history with no natural way to notice.
+    """
+
+    __tablename__ = "salary_payments"
+    __table_args__ = (
+        UniqueConstraint("employee_id", "period_year", "period_month", name="uq_salary_payments_employee_period"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    period_month: Mapped[int] = mapped_column(Integer)
+    period_year: Mapped[int] = mapped_column(Integer)
+    base_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    bonus_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    deductions_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
+    net_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    payment_method: Mapped[ExpensePaymentMethod] = mapped_column(Enum(ExpensePaymentMethod))
+    paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer)
+
+    employee: Mapped["User"] = relationship()
+    advances: Mapped[list["SalaryAdvance"]] = relationship(back_populates="settled_in_payment")
+
+
+class SalaryAdvance(Base, TimestampMixin):
+    """A مساعده (mid-month advance) against an employee's salary — its own
+    record (not a free-typed number in SalaryPayment.deductions_amount) so
+    there's a real history of *why* a deduction happened. `settled_in_payment_id`
+    is null until services/expenses.py folds it into a specific month's
+    SalaryPayment.deductions_amount — see docs/expense-management.md.
+    """
+
+    __tablename__ = "salary_advances"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    employee_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
+    date: Mapped[date] = mapped_column(Date, index=True)
+    notes: Mapped[str | None] = mapped_column(Text)
+    settled_in_payment_id: Mapped[int | None] = mapped_column(ForeignKey("salary_payments.id"), index=True)
+
+    employee: Mapped["User"] = relationship()
+    settled_in_payment: Mapped["SalaryPayment | None"] = relationship(back_populates="advances")
 

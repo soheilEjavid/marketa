@@ -8,6 +8,7 @@ from app.api.routes import (
     checks,
     customers,
     dashboard,
+    expenses,
     health,
     inventory,
     loyalty,
@@ -38,3 +39,4 @@ api_router.include_router(checks.router)
 api_router.include_router(shifts.router)
 api_router.include_router(users.router)
 api_router.include_router(loyalty.router)
+api_router.include_router(expenses.router)

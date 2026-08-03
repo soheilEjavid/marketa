@@ -87,6 +87,14 @@ def close_shift(
         )
     ) or Decimal("0")
 
+    # KNOWN GAP: this never subtracts cash paid OUT of the till — not
+    # SupplierPayment, and now not cash-method Expense/SalaryPayment either
+    # (see docs/expense-management.md "ارتباط با تسویه‌ی صندوق"). A manager
+    # paying rent/payroll/a supplier in cash mid-shift produces a false
+    # "shortage" here of exactly that amount. Not fixed in this pass —
+    # Expense/SalaryPayment.payment_method exists specifically so that when
+    # this formula is corrected, all three cash-out sources can be
+    # subtracted together in one fix rather than being patched separately.
     expected_cash = shift.opening_cash + cash_sales_total + cash_customer_payments
 
     shift.closing_cash = closing_cash
