@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, CheckCircle2, History, Pencil, Printer } from "lucide-react";
+import { ArrowLeft, History, Pencil, Printer } from "lucide-react";
 
-import { getAuditLogs, getProducts, getPurchase, getSuppliers, settleConsignmentItem } from "../api";
+import { getAuditLogs, getProducts, getPurchase, getSuppliers } from "../api";
 import { useI18n } from "../i18n";
 import { canManagePurchases } from "../permissions";
 import { getSession } from "../session";
@@ -32,19 +32,6 @@ export function PurchaseDetailView({ purchaseId, onBack }: PurchaseDetailViewPro
   const [showEdit, setShowEdit] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [settlingItemId, setSettlingItemId] = useState<number | null>(null);
-
-  async function handleSettle(itemId: number) {
-    setSettlingItemId(itemId);
-    try {
-      await settleConsignmentItem(itemId);
-      load();
-    } catch {
-      setError(t("apiError"));
-    } finally {
-      setSettlingItemId(null);
-    }
-  }
 
   function load() {
     setLoading(true);
@@ -96,9 +83,6 @@ export function PurchaseDetailView({ purchaseId, onBack }: PurchaseDetailViewPro
 
   const isPartial = Number(purchase.remaining_amount) > 0;
   const wasEdited = history.length > 0;
-  const consignmentOutstandingValue = purchase.items
-    .filter((item) => item.is_consignment && !item.consignment_settled_at)
-    .reduce((sum, item) => sum + Number(item.line_total), 0);
   const canEdit = canManagePurchases(getSession()?.role ?? "");
 
   return (
@@ -138,7 +122,6 @@ export function PurchaseDetailView({ purchaseId, onBack }: PurchaseDetailViewPro
                 <th>{t("unitCost")}</th>
                 <th>{t("sellingPrice")}</th>
                 <th>{t("lineTotal")}</th>
-                <th className="no-print">{t("consignmentShort")}</th>
               </tr>
             </thead>
             <tbody>
@@ -149,35 +132,10 @@ export function PurchaseDetailView({ purchaseId, onBack }: PurchaseDetailViewPro
                   <td>{money(Number(item.unit_cost))}</td>
                   <td>{item.selling_price ? money(Number(item.selling_price)) : "—"}</td>
                   <td>{money(Number(item.line_total))}</td>
-                  <td className="no-print">
-                    {!item.is_consignment ? (
-                      "—"
-                    ) : item.consignment_settled_at ? (
-                      <span className="consignment-badge settled">{t("consignmentSettled")}</span>
-                    ) : (
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span className="consignment-badge outstanding">{t("consignmentOutstanding")}</span>
-                        <button
-                          type="button"
-                          className="text-button"
-                          disabled={settlingItemId === item.id}
-                          onClick={() => handleSettle(item.id)}
-                        >
-                          <CheckCircle2 size={14} /> {t("markSettled")}
-                        </button>
-                      </div>
-                    )}
-                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-
-          {consignmentOutstandingValue > 0 && (
-            <div className="feedback-banner error no-print">
-              {t("consignmentExcludedNotice")}: {money(consignmentOutstandingValue)}
-            </div>
-          )}
 
           <div className="receipt-summary">
             <div className="receipt-total-row">

@@ -137,8 +137,8 @@ def _apply_dual_pricing(
 def _merge_duplicate_purchase_items(items: list[PurchaseItemCreate]) -> list[PurchaseItemCreate]:
     """Mirrors sales._merge_duplicate_sale_items -- see there for the full
     reasoning. Sums quantities for repeated product_id entries, keeping
-    every other field (unit_cost, selling_price, expiry_date, is_consignment,
-    and id when editing) from the first occurrence in submission order.
+    every other field (unit_cost, selling_price, expiry_date, and id when
+    editing) from the first occurrence in submission order.
     Must run before _check_dual_pricing_needed()/_build_purchase_items() so
     neither sees the raw, unmerged duplicate lines.
     """
@@ -160,13 +160,7 @@ def _build_purchase_items(
     data: PurchaseCreate,
     products: dict[int, Product],
 ) -> Decimal:
-    """Create PurchaseItem rows, adjust stock, and return the *payable*
-    total — i.e. excluding کالای امانی (consignment) lines. Consignment
-    goods still increase stock like any other purchase (below), but their
-    value contributes nothing to purchase.total/remaining_amount/supplier
-    balance until they're settled via settle_consignment_item(), since they
-    represent no payment obligation yet.
-    """
+    """Create PurchaseItem rows, adjust stock, and return the payable total."""
     total = Decimal("0")
     for item_data in data.items:
         product = products[item_data.product_id]
@@ -180,7 +174,6 @@ def _build_purchase_items(
                 selling_price=item_data.selling_price,
                 expiry_date=item_data.expiry_date,
                 line_total=line_total,
-                is_consignment=item_data.is_consignment,
             )
         )
         product.stock_quantity += item_data.quantity
@@ -197,8 +190,7 @@ def _build_purchase_items(
                 related_id=purchase.id,
             )
         )
-        if not item_data.is_consignment:
-            total += line_total
+        total += line_total
     return total
 
 
@@ -429,21 +421,13 @@ def edit_purchase(database: Session, purchase: Purchase, data: PurchaseEditReque
             product = products[item_data.product_id]
             line_total = item_data.quantity * item_data.unit_cost
             if item_data.id is not None:
-                # Existing line: is_consignment/consignment_settled_at are
-                # deliberately carried over untouched — the edit payload's
-                # own is_consignment is never read here, so an edit can
-                # never silently flip a line's consignment status (see
-                # PurchaseItemCreate.is_consignment docstring).
                 line = old_items_by_id[item_data.id]
                 line.quantity = item_data.quantity
                 line.unit_cost = item_data.unit_cost
                 line.selling_price = item_data.selling_price
                 line.expiry_date = item_data.expiry_date
                 line.line_total = line_total
-                is_outstanding_consignment = line.is_consignment and line.consignment_settled_at is None
             else:
-                # New lines added via edit can't be marked consignment —
-                # there's no edit-time UI for it, matching the backend.
                 database.add(
                     PurchaseItem(
                         purchase_id=purchase.id,
@@ -453,12 +437,9 @@ def edit_purchase(database: Session, purchase: Purchase, data: PurchaseEditReque
                         selling_price=item_data.selling_price,
                         expiry_date=item_data.expiry_date,
                         line_total=line_total,
-                        is_consignment=False,
                     )
                 )
-                is_outstanding_consignment = False
-            if not is_outstanding_consignment:
-                total += line_total
+            total += line_total
 
             if latest_purchase_id_by_product.get(item_data.product_id) == purchase.id:
                 product.purchase_price = item_data.unit_cost
@@ -495,62 +476,6 @@ def edit_purchase(database: Session, purchase: Purchase, data: PurchaseEditReque
         select(Purchase).where(Purchase.id == purchase.id).options(selectinload(Purchase.items), selectinload(Purchase.payment_lines))
     )
     return updated, audit_details
-
-
-class ConsignmentError(PurchaseError):
-    pass
-
-
-def settle_consignment_item(database: Session, item: PurchaseItem) -> PurchaseItem:
-    """Mark one کالای امانی line as تسویه‌شده (settled): from this point on
-    its already-recorded line_total counts toward the purchase's payable
-    total, remaining_amount, payment_status, and (if a supplier is on file)
-    supplier balance — exactly as if it had been a normal purchase line all
-    along. Uses only the item's own recorded unit_cost/line_total, never an
-    invented figure.
-    """
-    if not item.is_consignment:
-        raise ConsignmentError("This line item is not a consignment item")
-    if item.consignment_settled_at is not None:
-        raise ConsignmentError("This consignment item has already been settled")
-
-    purchase = database.get(Purchase, item.purchase_id, with_for_update=True)
-    if purchase is None:
-        raise PurchaseError("Purchase not found")
-
-    item.consignment_settled_at = datetime.now(UTC)
-    purchase.total += item.line_total
-    purchase.remaining_amount = purchase.total - purchase.paid_amount
-    purchase.payment_status = payment_status(purchase.total, purchase.paid_amount)
-
-    if purchase.supplier_id:
-        supplier = database.get(Supplier, purchase.supplier_id, with_for_update=True)
-        if supplier:
-            supplier.balance += item.line_total
-
-    database.commit()
-    database.refresh(item)
-    return item
-
-
-def get_purchase_item(database: Session, item_id: int) -> PurchaseItem | None:
-    return database.get(PurchaseItem, item_id)
-
-
-def list_outstanding_consignment(database: Session) -> list[PurchaseItem]:
-    """All کالای امانی line items not yet settled, newest purchase first."""
-    return list(
-        database.scalars(
-            select(PurchaseItem)
-            .join(Purchase, PurchaseItem.purchase_id == Purchase.id)
-            .where(
-                PurchaseItem.is_consignment.is_(True),
-                PurchaseItem.consignment_settled_at.is_(None),
-            )
-            .options(selectinload(PurchaseItem.purchase), selectinload(PurchaseItem.product))
-            .order_by(Purchase.created_at.desc())
-        )
-    )
 
 
 def get_purchase(database: Session, purchase_id: int) -> Purchase | None:

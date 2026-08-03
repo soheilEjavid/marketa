@@ -4,7 +4,6 @@ import {
   Boxes,
   CalendarClock,
   CalendarDays,
-  CheckCircle2,
   ChevronLeft,
   CircleDollarSign,
   Clock,
@@ -27,11 +26,9 @@ import {
   getLoyaltyRedemptions,
   getNearExpiryProducts,
   getNetProfit,
-  getOutstandingConsignment,
   getSalesPage,
   getShifts,
   request,
-  settleConsignmentItem,
 } from "../api";
 import { JalaliDatePicker } from "../components/JalaliDatePicker";
 import { SaleDetailView } from "../components/SaleDetailView";
@@ -49,7 +46,6 @@ import type {
   LoyaltyRedemptionRow,
   NearExpiryRow,
   NetProfitReport,
-  OutstandingConsignmentRow,
   Sale,
 } from "../types";
 
@@ -62,7 +58,6 @@ type ReportTab =
   | "inflation-rate"
   | "cashiers"
   | "balances"
-  | "consignment"
   | "loyalty";
 
 type DailySalesRow = {
@@ -148,7 +143,6 @@ const tabs: ReportTabDefinition[] = [
   { key: "inflation-rate", label: "inflationRateTitle", Icon: Percent },
   { key: "cashiers", label: "cashierPerformance", Icon: UserRound },
   { key: "balances", label: "balances", Icon: UsersRound },
-  { key: "consignment", label: "consignmentGoods", Icon: Package },
   { key: "loyalty", label: "loyaltyRedemptions", Icon: Gift },
 ];
 
@@ -223,9 +217,6 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
   const [invoiceList, setInvoiceList] = useState<Sale[]>([]);
   const [invoiceListLoading, setInvoiceListLoading] = useState(true);
   const [viewingSaleId, setViewingSaleId] = useState<number | null>(null);
-  const [consignmentRows, setConsignmentRows] = useState<OutstandingConsignmentRow[]>([]);
-  const [consignmentLoading, setConsignmentLoading] = useState(true);
-  const [settlingItemId, setSettlingItemId] = useState<number | null>(null);
   const [redemptionRows, setRedemptionRows] = useState<LoyaltyRedemptionRow[]>([]);
   const [redemptionLoading, setRedemptionLoading] = useState(true);
 
@@ -302,34 +293,6 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
   useEffect(() => {
     loadInvoiceList();
   }, [loadInvoiceList]);
-
-  const loadConsignment = useCallback(async () => {
-    setConsignmentLoading(true);
-    try {
-      const rows = await getOutstandingConsignment();
-      setConsignmentRows(rows);
-    } catch {
-      setConsignmentRows([]);
-    } finally {
-      setConsignmentLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadConsignment();
-  }, [loadConsignment]);
-
-  async function handleSettleConsignment(itemId: number) {
-    setSettlingItemId(itemId);
-    try {
-      await settleConsignmentItem(itemId);
-      await loadConsignment();
-    } catch {
-      setError(t("apiError"));
-    } finally {
-      setSettlingItemId(null);
-    }
-  }
 
   const loadRedemptions = useCallback(async () => {
     setRedemptionLoading(true);
@@ -1355,72 +1318,6 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
             </div>
           </section>
         </>
-      )}
-
-      {tab === "consignment" && (
-        <section className="panel report-table-wrap">
-          <div className="panel-heading">
-            <div>
-              <h2>{t("consignmentGoods")}</h2>
-              <span className="subtle-chip" style={{ marginTop: 6, display: "inline-block" }}>
-                {t("consignmentGoodsSubtitle")}
-              </span>
-            </div>
-          </div>
-
-          <div className="report-table">
-            <div className="report-table-row consignment-report-columns report-head">
-              <span className="report-header-cell">
-                <UsersRound size={14} strokeWidth={1.8} />
-                {t("supplier")}
-              </span>
-              <span className="report-header-cell">
-                <Package size={14} strokeWidth={1.8} />
-                {t("product")}
-              </span>
-              <span className="report-header-cell">
-                <Boxes size={14} strokeWidth={1.8} />
-                {t("quantity")}
-              </span>
-              <span className="report-header-cell">
-                <DollarSign size={14} strokeWidth={1.8} />
-                {t("value")}
-              </span>
-              <span className="report-header-cell">
-                <CalendarDays size={14} strokeWidth={1.8} />
-                {t("dateReceived")}
-              </span>
-              <span />
-            </div>
-            {consignmentLoading ? (
-              <div className="empty-state compact">{t("loading")}</div>
-            ) : consignmentRows.length > 0 ? (
-              consignmentRows.map((row) => (
-                <div className="report-table-row consignment-report-columns animated-line" key={row.purchase_item_id}>
-                  <strong>{row.supplier_name ?? "—"}</strong>
-                  <span>
-                    {row.product_name}
-                    <br />
-                    <span className="muted-text" style={{ fontSize: 11 }}>{row.invoice_number}</span>
-                  </span>
-                  <span className="muted-text">{number(Number(row.quantity))}</span>
-                  <strong>{renderMoney(Number(row.value))}</strong>
-                  <span className="report-date-cell">{isoToJalaliStr(row.received_at.slice(0, 10))}</span>
-                  <button
-                    type="button"
-                    className="text-button"
-                    disabled={settlingItemId === row.purchase_item_id}
-                    onClick={() => handleSettleConsignment(row.purchase_item_id)}
-                  >
-                    <CheckCircle2 size={14} /> {t("markSettled")}
-                  </button>
-                </div>
-              ))
-            ) : (
-              <div className="empty-state compact">{t("noOutstandingConsignment")}</div>
-            )}
-          </div>
-        </section>
       )}
 
       {tab === "loyalty" && (

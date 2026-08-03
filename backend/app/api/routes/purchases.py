@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.api.dependencies import DatabaseSession
 from app.models.entities import User as UserModel
-from app.schemas.purchase import PurchaseCreate, PurchaseEditRequest, PurchaseItemRead, PurchaseRead
+from app.schemas.purchase import PurchaseCreate, PurchaseEditRequest, PurchaseRead
 from app.services import purchases as purchase_service
 from app.services.auth import require_role
 from app.services.audit import record_audit
@@ -99,28 +99,3 @@ async def edit_purchase(
         raise HTTPException(status_code=404, detail=str(error)) from error
     except purchase_service.PurchaseError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
-
-
-@router.post("/items/{item_id}/settle-consignment", response_model=PurchaseItemRead)
-async def settle_consignment_item(
-    item_id: int,
-    database: DatabaseSession,
-    current_user: UserModel = Depends(require_role("admin", "inventory_manager", "manager", "accountant")),
-):
-    item = purchase_service.get_purchase_item(database, item_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="Purchase item not found")
-    try:
-        settled = purchase_service.settle_consignment_item(database, item)
-    except purchase_service.ConsignmentError as error:
-        raise HTTPException(status_code=422, detail=str(error)) from error
-    record_audit(
-        database,
-        user_id=current_user.id,
-        username=current_user.username,
-        action="settle_consignment",
-        entity_type="purchase_item",
-        entity_id=settled.id,
-        details=f"purchase_id={settled.purchase_id}, amount={settled.line_total}",
-    )
-    return settled

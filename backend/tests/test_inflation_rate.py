@@ -89,7 +89,6 @@ def _make_purchase(database: Session, product: Product, *, quantity: str, unit_c
             quantity=qty,
             unit_cost=cost,
             line_total=total,
-            is_consignment=False,
         )
     )
     database.commit()

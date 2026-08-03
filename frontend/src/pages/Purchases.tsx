@@ -35,9 +35,6 @@ type PurchaseLine = {
   unitCost: number;
   sellingPrice?: number | null;
   expiryDate?: string;
-  /** کالای امانی — stock still increases, but this line's value stays out
-   * of the payable total until settled later (see Reports). */
-  isConsignment?: boolean;
   /** اشانتیون — a genuinely free promotional item from the supplier, not
    * an incomplete row. unitCost is left untouched (nothing is ever
    * cleared/lost) — every place that reads cost for calculation,
@@ -170,18 +167,6 @@ export function Purchases() {
       ),
     [displayLines],
   );
-  // Consignment lines still show up in the full invoice total above, but
-  // carry no payment obligation yet — payment lines are validated against
-  // this payable-only figure, matching the backend's purchase.total.
-  const consignmentValue = useMemo(
-    () =>
-      displayLines
-        .filter((line) => line.isConsignment)
-        .reduce((sum, line) => sum + line.quantity * effectiveCost(line), 0),
-    [displayLines],
-  );
-  const payableTotal = total - consignmentValue;
-
   // Whole-invoice profit calculator (see computeLineProfit) — only counts
   // lines where both prices are actually present, so an in-progress row
   // never drags the blended margin toward a misleading number.
@@ -203,21 +188,12 @@ export function Purchases() {
     };
   }, [lines]);
 
-  // Master toggle shown above the submit button: reflects whether every
-  // current line is already marked consignment, and lets the user flip
-  // all of them at once instead of checking each row individually.
-  const allLinesConsignment = lines.length > 0 && lines.every((line) => line.isConsignment);
-
-  function toggleAllConsignment(checked: boolean) {
-    setLines((current) => current.map((line) => ({ ...line, isConsignment: checked })));
-  }
-
   const paidTotal = useMemo(
     () => paymentLines.reduce((sum, line) => sum + (Number(line.amount) || 0), 0),
     [paymentLines],
   );
-  const remainingAfterPayment = Math.max(0, payableTotal - paidTotal);
-  const paymentExceedsTotal = paidTotal > payableTotal;
+  const remainingAfterPayment = Math.max(0, total - paidTotal);
+  const paymentExceedsTotal = paidTotal > total;
   const hasIncompleteCheckLine = paymentLines.some(
     (line) => line.method === "check" && (!line.checkDueDate || !line.checkNumber.trim()),
   );
@@ -443,7 +419,6 @@ export function Purchases() {
             ? { selling_price: line.sellingPrice }
             : {}),
           ...(line.expiryDate ? { expiry_date: line.expiryDate } : {}),
-          ...(line.isConsignment ? { is_consignment: true } : {}),
         })),
         payment_lines: paymentLines
           .filter((line) => line.amount > 0)
@@ -733,7 +708,6 @@ export function Purchases() {
             <span>{t("unitCost")}</span>
             <span>{t("sellingPrice")}</span>
             <span>{t("expiryDate")}</span>
-            <span>{t("consignmentShort")}</span>
             <span>{t("total")}</span>
             <span />
           </div>
@@ -857,16 +831,6 @@ export function Purchases() {
                       updateLine(line.key, { expiryDate: isoDate })
                     }
                   />
-                  <label className="consignment-checkbox" title={t("consignmentHint")}>
-                    <input
-                      type="checkbox"
-                      checked={line.isConsignment ?? false}
-                      onChange={(event) =>
-                        updateLine(line.key, { isConsignment: event.target.checked })
-                      }
-                    />
-                    {t("consignmentShort")}
-                  </label>
                   <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                     <strong>{money(line.quantity * effectiveCost(line))}</strong>
                     {(() => {
@@ -988,15 +952,9 @@ export function Purchases() {
               <PackagePlus size={22} />
               <span>{validLines.length} {t("items")}</span>
             </div>
-            {consignmentValue > 0 && (
-              <div className="total-row muted-text">
-                <span>{t("consignmentValue")}</span>
-                <strong>{money(consignmentValue)}</strong>
-              </div>
-            )}
             <div className="total-row">
-              <span>{consignmentValue > 0 ? t("payableTotal") : t("total")}</span>
-              <strong>{money(payableTotal)}</strong>
+              <span>{t("total")}</span>
+              <strong>{money(total)}</strong>
             </div>
             {invoiceProfitSummary && (
               <div className="total-row">
@@ -1014,14 +972,6 @@ export function Purchases() {
                 </strong>
               </div>
             )}
-            <label className="consignment-whole-invoice" title={t("consignmentHint")}>
-              <input
-                type="checkbox"
-                checked={allLinesConsignment}
-                onChange={(event) => toggleAllConsignment(event.target.checked)}
-              />
-              {t("consignmentWholeInvoice")}
-            </label>
           </div>
           <button
             className={`primary-button submit-button ${status === "submitting" ? "is-loading" : ""}`}

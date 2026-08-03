@@ -76,19 +76,6 @@ class CustomerBalanceSummary(BaseModel):
     credit_limit: Decimal
 
 
-class OutstandingConsignmentRow(BaseModel):
-    purchase_item_id: int
-    purchase_id: int
-    invoice_number: str
-    supplier_id: int | None
-    supplier_name: str | None
-    product_id: int
-    product_name: str
-    quantity: Decimal
-    value: Decimal
-    received_at: datetime
-
-
 class SupplierBalanceSummary(BaseModel):
     supplier_id: int
     supplier_name: str

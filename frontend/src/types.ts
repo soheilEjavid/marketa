@@ -413,8 +413,6 @@ export type PurchaseItemCreate = {
   unit_cost: number;
   selling_price?: number | null;
   expiry_date?: string | null;
-  /** کالای امانی — only meaningful on purchase creation; ignored by edits. */
-  is_consignment?: boolean;
 };
 
 export type PurchasePaymentMethod = "cash" | "card" | "check";
@@ -458,8 +456,6 @@ export type PurchaseItemRead = {
   selling_price: string | null;
   expiry_date: string | null;
   line_total: string;
-  is_consignment: boolean;
-  consignment_settled_at: string | null;
 };
 
 export type CheckStatus = "pending" | "cleared" | "bounced";
@@ -704,19 +700,6 @@ export type NetProfitReport = {
   gross_profit: string;
   total_operating_expenses: string;
   net_profit: string;
-};
-
-export type OutstandingConsignmentRow = {
-  purchase_item_id: number;
-  purchase_id: number;
-  invoice_number: string;
-  supplier_id: number | null;
-  supplier_name: string | null;
-  product_id: number;
-  product_name: string;
-  quantity: string;
-  value: string;
-  received_at: string;
 };
 
 export type PaymentMethodBreakdownRow = {

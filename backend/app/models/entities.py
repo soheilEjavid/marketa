@@ -291,11 +291,6 @@ class PurchaseItem(Base):
     selling_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     expiry_date: Mapped[date | None] = mapped_column(Date)
     line_total: Mapped[Decimal] = mapped_column(Numeric(14, 2))
-    # کالای امانی (consignment): goods physically received and already
-    # counted into stock, but with no defined payment obligation yet — see
-    # services/purchases.py. False/None for every normal purchase line.
-    is_consignment: Mapped[bool] = mapped_column(Boolean, default=False)
-    consignment_settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     purchase: Mapped[Purchase] = relationship(back_populates="items")
     product: Mapped[Product] = relationship(back_populates="purchase_items")

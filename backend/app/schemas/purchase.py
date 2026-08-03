@@ -23,10 +23,6 @@ class PurchaseItemCreate(BaseModel):
     unit_cost: Decimal = Field(ge=0)
     selling_price: Decimal | None = Field(default=None, ge=0)
     expiry_date: date | None = None
-    # کالای امانی — only read on purchase *creation*. The edit flow
-    # deliberately ignores this field entirely (see edit_purchase) so an
-    # edit can never silently flip an existing line's consignment status.
-    is_consignment: bool = False
 
 
 class PurchasePaymentLineInput(BaseModel):
@@ -74,8 +70,6 @@ class PurchaseItemRead(BaseModel):
     selling_price: Decimal | None
     expiry_date: date | None
     line_total: Decimal
-    is_consignment: bool
-    consignment_settled_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)
 

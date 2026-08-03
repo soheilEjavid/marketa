@@ -1049,10 +1049,6 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
   grid-template-columns: minmax(140px, 1.2fr) minmax(130px, .9fr) minmax(130px, .9fr) minmax(120px, .8fr) minmax(120px, .8fr) minmax(110px, .8fr);
 }
 
-.report-table-row.consignment-report-columns {
-  grid-template-columns: minmax(150px, 1.1fr) minmax(170px, 1.3fr) minmax(90px, .6fr) minmax(120px, .8fr) minmax(120px, .8fr) minmax(140px, .9fr);
-}
-
 .feedback-banner {
   display: flex;
   align-items: center;
@@ -1207,7 +1203,7 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
 }
 .purchase-row {
   display: grid;
-  grid-template-columns: minmax(200px, 2fr) minmax(110px, .7fr) minmax(130px, .8fr) minmax(130px, .8fr) minmax(150px, .9fr) 74px minmax(140px, 1fr) 42px;
+  grid-template-columns: minmax(200px, 2fr) minmax(110px, .7fr) minmax(130px, .8fr) minmax(130px, .8fr) minmax(150px, .9fr) minmax(140px, 1fr) 42px;
   gap: 12px;
   align-items: center;
   min-width: 1050px;
@@ -1215,16 +1211,6 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
   border-bottom: 1px solid #f3e9e3;
   overflow: visible;
 }
-.consignment-checkbox {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  color: var(--muted);
-  cursor: pointer;
-}
-.consignment-checkbox input { width: auto !important; cursor: pointer; }
 .promotional-checkbox {
   display: flex;
   align-items: center;
@@ -1283,32 +1269,6 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
   width: auto;
   min-width: 220px;
 }
-.consignment-whole-invoice {
-  grid-column: 1 / -1;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  width: fit-content;
-  padding: 6px 14px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted);
-  cursor: pointer;
-  transition: border-color .2s ease, color .2s ease, background .2s ease;
-}
-.consignment-whole-invoice:hover { border-color: var(--orange); color: var(--orange-dark); }
-/* Quiet by default, only picks up the accent color once actually toggled
-   on — keeps this secondary option from competing with the total/submit
-   button for visual weight. */
-.consignment-whole-invoice:has(input:checked) {
-  border-color: var(--orange-dark);
-  background: var(--orange-soft);
-  color: var(--orange-dark);
-}
-.consignment-whole-invoice input { width: auto; cursor: pointer; }
-
 .filter-actions select { min-width: 180px; }
 .inventory-table { padding: 0; overflow-x: auto; }
 .tabs {
@@ -3191,23 +3151,6 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
   font-weight: 700;
   background: var(--orange-light);
   color: var(--orange-dark);
-}
-.consignment-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 3px 9px;
-  border-radius: 20px;
-  font-size: 10px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-.consignment-badge.outstanding {
-  background: var(--orange-light);
-  color: var(--orange-dark);
-}
-.consignment-badge.settled {
-  background: #e3f6ea;
-  color: var(--success);
 }
 .edited-badge.inline {
   margin-inline-start: 8px;

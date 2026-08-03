@@ -32,7 +32,6 @@ import type {
   LoyaltyTransaction,
   NearExpiryRow,
   NetProfitReport,
-  OutstandingConsignmentRow,
   SalaryAdvance,
   SalaryPayment,
   PaymentMethodBreakdownRow,
@@ -495,16 +494,6 @@ export async function editPurchase(purchaseId: number, data: PurchaseEditRequest
     method: "PATCH",
     body: JSON.stringify(data),
   });
-}
-
-export async function settleConsignmentItem(purchaseItemId: number): Promise<PurchaseItemRead> {
-  return request<PurchaseItemRead>(`${apiBaseUrl}/purchases/items/${purchaseItemId}/settle-consignment`, {
-    method: "POST",
-  });
-}
-
-export async function getOutstandingConsignment(): Promise<OutstandingConsignmentRow[]> {
-  return request<OutstandingConsignmentRow[]>(`${apiBaseUrl}/reports/outstanding-consignment`);
 }
 
 export type PagedResult<T> = { items: T[]; total: number };

@@ -22,7 +22,6 @@ from app.schemas.reports import (
     LoyaltyLiabilityRow,
     LoyaltyRedemptionRow,
     NearExpiryRow,
-    OutstandingConsignmentRow,
     PaymentMethodBreakdown,
     ProductSalesSummary,
     SupplierBalanceSummary,
@@ -161,14 +160,6 @@ async def get_supplier_balances(
     _: UserModel = Depends(require_role(*READ_ROLES)),
 ):
     return report_service.supplier_balances(database)
-
-
-@router.get("/outstanding-consignment", response_model=list[OutstandingConsignmentRow])
-async def get_outstanding_consignment(
-    database: DatabaseSession,
-    _: UserModel = Depends(require_role(*READ_ROLES)),
-):
-    return report_service.outstanding_consignment(database)
 
 
 @router.get("/loyalty-liability", response_model=list[LoyaltyLiabilityRow])

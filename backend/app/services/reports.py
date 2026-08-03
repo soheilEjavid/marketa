@@ -480,37 +480,6 @@ def customer_balances(database: Session) -> list[dict]:
     ]
 
 
-def outstanding_consignment(database: Session) -> list[dict]:
-    """All کالای امانی purchase-item lines not yet settled — see
-    services/purchases.settle_consignment_item for how settlement works.
-    """
-    items = database.scalars(
-        select(PurchaseItem)
-        .join(Purchase, PurchaseItem.purchase_id == Purchase.id)
-        .where(
-            PurchaseItem.is_consignment.is_(True),
-            PurchaseItem.consignment_settled_at.is_(None),
-        )
-        .options(selectinload(PurchaseItem.purchase).selectinload(Purchase.supplier), selectinload(PurchaseItem.product))
-        .order_by(Purchase.created_at.desc())
-    ).all()
-    return [
-        {
-            "purchase_item_id": item.id,
-            "purchase_id": item.purchase_id,
-            "invoice_number": item.purchase.invoice_number,
-            "supplier_id": item.purchase.supplier_id,
-            "supplier_name": item.purchase.supplier.name if item.purchase.supplier else None,
-            "product_id": item.product_id,
-            "product_name": item.product.name,
-            "quantity": item.quantity,
-            "value": item.line_total,
-            "received_at": item.purchase.created_at,
-        }
-        for item in items
-    ]
-
-
 def loyalty_liability(database: Session) -> list[dict]:
     """Mirrors customer_balances() in shape/intent, but for the loyalty
     program: total point value outstanding is a future obligation the shop
@@ -795,9 +764,9 @@ class _ProductPeriodRow:
 
 
 def _period_purchase_agg(database: Session, start: date, end: date) -> dict[int, tuple[Decimal, Decimal]]:
-    """product_id -> (total_qty, total_cost) from completed, non-consignment,
-    non-zero-cost purchase lines in [start, end] — "موارد استثنا" excludes
-    اشانتیون/zero-cost lines since their price isn't a real market price.
+    """product_id -> (total_qty, total_cost) from completed, non-zero-cost
+    purchase lines in [start, end] — "موارد استثنا" excludes zero-cost lines
+    since their price isn't a real market price.
     """
     rows = database.execute(
         select(
@@ -808,7 +777,6 @@ def _period_purchase_agg(database: Session, start: date, end: date) -> dict[int,
         .join(Purchase, Purchase.id == PurchaseItem.purchase_id)
         .where(
             Purchase.status == DocumentStatus.COMPLETED,
-            PurchaseItem.is_consignment.is_(False),
             PurchaseItem.unit_cost > 0,
             func.date(Purchase.created_at) >= start,
             func.date(Purchase.created_at) <= end,
