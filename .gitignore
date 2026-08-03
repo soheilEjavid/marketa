@@ -16,3 +16,5 @@ coverage/
 .continue/
 .claude/scheduled_tasks.lock
 backend/_verify.py
+*.db-wal
+*.db-shm
