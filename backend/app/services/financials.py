@@ -17,6 +17,12 @@ def record_customer_payment(database: Session, customer: Customer, data: Payment
         raise FinancialError("Sale does not belong to this customer")
     if sale and data.amount > sale.remaining_amount:
         raise FinancialError("Payment cannot exceed the remaining sale amount")
+    # Same guard for an unallocated payment (no document_id, paid against the
+    # overall balance) — previously only the sale-specific path above was
+    # checked, so an unallocated overpayment silently clamped the balance to
+    # zero via max(0, ...) below with no error and no record of the excess.
+    if sale is None and data.amount > customer.balance:
+        raise FinancialError("Payment cannot exceed the customer's outstanding balance")
     payment = CustomerPayment(customer=customer, sale=sale, amount=data.amount, method=data.method, reference=data.reference, notes=data.notes)
     database.add(payment)
     if sale:
@@ -34,6 +40,10 @@ def record_supplier_payment(database: Session, supplier: Supplier, data: Payment
         raise FinancialError("Purchase does not belong to this supplier")
     if purchase and data.amount > purchase.remaining_amount:
         raise FinancialError("Payment cannot exceed the remaining purchase amount")
+    # Same guard as record_customer_payment for the unallocated case — see
+    # that function's comment.
+    if purchase is None and data.amount > supplier.balance:
+        raise FinancialError("Payment cannot exceed the supplier's outstanding balance")
     payment = SupplierPayment(supplier=supplier, purchase=purchase, amount=data.amount, method=data.method, reference=data.reference, notes=data.notes)
     database.add(payment)
     if purchase:

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
+  ChevronDown,
   History,
   Layers,
   Minus,
@@ -45,6 +46,14 @@ type PaymentLine = {
   key: number;
   method: SalePaymentMethod;
   amount: number;
+  /** True while `amount` is still the system-suggested default the line was
+   * created or last auto-balanced with — never yet hand-typed by the
+   * cashier. Only a line still in this state may be auto-adjusted when the
+   * other split-payment line changes (see updatePaymentLine); once the
+   * cashier types a real amount, that's a deliberate choice (e.g. paying
+   * part now and leaving the rest as نسیه) and must never be silently
+   * overwritten. */
+  autoAmount?: boolean;
   checkNumber: string;
   checkBankName: string;
   checkDueDate: string;
@@ -89,6 +98,15 @@ export function Sales() {
   /** Product ids whose per-line discount input is currently expanded —
    * purely a UI reveal state, most lines never need this open. */
   const [expandedDiscounts, setExpandedDiscounts] = useState<Set<number>>(new Set());
+  /** Product ids whose dual-price old/new toggle is currently expanded.
+   * Collapsed by default (and re-collapsed after picking a tier) so a
+   * dual-priced cart line normally shows just the active price, not two
+   * full-size buttons — same reveal-on-demand pattern as expandedDiscounts. */
+  const [expandedPriceTiers, setExpandedPriceTiers] = useState<Set<number>>(new Set());
+  /** Whether the invoice-discount input is revealed — collapsed to a small
+   * "+ add" link by default (most sales have no invoice-level discount),
+   * same reveal-on-demand idea as the two Sets above. */
+  const [invoiceDiscountOpen, setInvoiceDiscountOpen] = useState(false);
   const [heldSales, setHeldSales] = useState<Sale[]>([]);
   /** Which held invoice (if any) the current cart's contents came from —
    * drives the "active tab" highlight, like a browser tab strip. */
@@ -199,13 +217,46 @@ export function Sales() {
   function addPaymentLine() {
     setPaymentLines((current) => [
       ...current,
-      // Defaults to card — most purchases are made by card.
-      { key: nextPaymentLineKey++, method: "card", amount: 0, checkNumber: "", checkBankName: "", checkDueDate: "", notes: "" },
+      // Defaults to card (most purchases are made by card) and to whatever
+      // is still owed right now — remainingAfterPayment already equals the
+      // full invoice total when this is the first line (no prior lines to
+      // subtract), and the true remainder after that. Saves re-typing the
+      // total for the common single-full-payment case; still freely
+      // editable for a split payment.
+      { key: nextPaymentLineKey++, method: "card", amount: remainingAfterPayment, autoAmount: true, checkNumber: "", checkBankName: "", checkDueDate: "", notes: "" },
     ]);
   }
 
   function updatePaymentLine(key: number, changes: Partial<PaymentLine>) {
-    setPaymentLines((current) => current.map((line) => (line.key === key ? { ...line, ...changes } : line)));
+    setPaymentLines((current) => {
+      // Typing a real amount into the line the cashier is directly editing
+      // always marks it manual — it's never auto-balanced again after this.
+      const updated = current.map((line) =>
+        line.key === key
+          ? { ...line, ...changes, ...(changes.amount !== undefined ? { autoAmount: false } : {}) }
+          : line,
+      );
+      // Auto-balance the other line when there are exactly two split-payment
+      // lines and an amount was just typed — e.g. total 20,000: typing
+      // 10,000 into the cash line sets the card line to the remaining
+      // 10,000 automatically, instead of making the cashier do that
+      // subtraction by hand so the two lines still sum to the total. But
+      // only while that other line is still at its system-suggested amount
+      // (autoAmount !== false) — once the cashier has hand-typed a real
+      // amount into it (e.g. "10,000 by card, 5,000 cash, the remaining
+      // 5,000 stays نسیه"), it's a deliberate partial payment and must never
+      // be silently overwritten just because the other line changed. Only
+      // the two-line case: with 3+ lines there's no single unambiguous
+      // "other" line to adjust, so those are left for the cashier to enter.
+      if (changes.amount !== undefined && updated.length === 2) {
+        const otherIndex = updated.findIndex((line) => line.key !== key);
+        if (otherIndex !== -1 && updated[otherIndex].autoAmount !== false) {
+          const editedAmount = Number(changes.amount) || 0;
+          updated[otherIndex] = { ...updated[otherIndex], amount: Math.max(0, total - editedAmount), autoAmount: true };
+        }
+      }
+      return updated;
+    });
   }
 
   function removePaymentLine(key: number) {
@@ -248,6 +299,26 @@ export function Sales() {
         line.product.id === productId ? { ...line, priceTier: tier } : line,
       ),
     );
+    // Collapse back to the compact single-price view once a tier is picked —
+    // re-expand via togglePriceTierInput if the cashier needs to switch again.
+    setExpandedPriceTiers((current) => {
+      if (!current.has(productId)) return current;
+      const next = new Set(current);
+      next.delete(productId);
+      return next;
+    });
+  }
+
+  function togglePriceTierInput(productId: number) {
+    setExpandedPriceTiers((current) => {
+      const next = new Set(current);
+      if (next.has(productId)) {
+        next.delete(productId);
+      } else {
+        next.add(productId);
+      }
+      return next;
+    });
   }
 
   function updateItemDiscount(productId: number, value: string) {
@@ -599,7 +670,16 @@ export function Sales() {
                   onClick={() => addProduct(product)}
                   disabled={Number(product.stock_quantity) <= 0}
                 >
-                  <span className="product-tile-icon">{product.name.charAt(0)}</span>
+                  <span
+                    className="product-tile-icon"
+                    style={
+                      product.image_url
+                        ? { backgroundImage: `url(${product.image_url})`, backgroundSize: "cover" }
+                        : undefined
+                    }
+                  >
+                    {!product.image_url && product.name.charAt(0)}
+                  </span>
                   <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <strong>{product.name}</strong>
                     {product.is_dual_priced && (
@@ -677,19 +757,56 @@ export function Sales() {
             </div>
           )}
 
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">{t("sales")}</p>
-              <h2>{t("cart")}</h2>
-            </div>
+          {/* "فروش" + "سبد فروش" combined onto one line (was eyebrow above,
+              h2 below — two lines) specifically to free up a bit more
+              vertical space in the cart panel for cart-line rows, same
+              motivation as every other compactness change on this panel. */}
+          <div className="panel-heading cart-heading-compact">
+            <h2><span className="eyebrow">{t("sales")}</span> {t("cart")}</h2>
             <span className="count-badge">{number(cart.length)}</span>
           </div>
 
+          {/* Scrollable middle zone — everything here can legitimately grow
+              (cart size, payment lines) and scrolls together as one unit,
+              so it never pushes the fixed footer below (checkout-actions
+              etc.) out of view. See .cart-fixed-footer further down. */}
+          <div className="cart-scroll-zone">
           <div className="cart-lines">
             {cart.map((line) => {
               const discountOpen = expandedDiscounts.has(line.product.id);
+              const priceTierOpen = expandedPriceTiers.has(line.product.id);
               return (
-              <div className="cart-line animated-line" key={line.product.id}>
+              <div className="cart-line animated-line compact-row" key={line.product.id}>
+                <div
+                  className="product-avatar cart-line-avatar"
+                  style={
+                    line.product.image_url
+                      ? { backgroundImage: `url(${line.product.image_url})`, backgroundSize: "cover" }
+                      : undefined
+                  }
+                >
+                  {!line.product.image_url && line.product.name.charAt(0)}
+                </div>
+                <div className="cart-line-info">
+                  <strong>{line.product.name}</strong>
+                  <span className="cart-line-price-row">
+                    <small>{money(lineUnitPrice(line))}</small>
+                    {line.product.is_dual_priced && !priceTierOpen && (
+                      <button
+                        type="button"
+                        className="price-tier-collapsed"
+                        onClick={() => togglePriceTierInput(line.product.id)}
+                        title={t("dualPriceBadge")}
+                      >
+                        {line.priceTier === "old" ? t("dualPriceOldPrice") : t("dualPriceNewPrice")}
+                        <ChevronDown size={11} />
+                      </button>
+                    )}
+                    {!!line.discount && !discountOpen && (
+                      <span className="discount-badge">-{money(line.discount)}</span>
+                    )}
+                  </span>
+                </div>
                 <div className="quantity-control compact">
                   <button onClick={() => updateQuantity(line.product.id, -1)}>
                     <Minus size={12} />
@@ -699,14 +816,7 @@ export function Sales() {
                     <Plus size={12} />
                   </button>
                 </div>
-                <div className="cart-line-info">
-                  <strong>{line.product.name}</strong>
-                  <small>{money(lineUnitPrice(line))}</small>
-                </div>
                 <div className="cart-line-actions">
-                  {!!line.discount && !discountOpen && (
-                    <span className="discount-badge">-{money(line.discount)}</span>
-                  )}
                   <button
                     type="button"
                     className={`icon-button tiny ${line.discount ? "has-discount" : ""}`}
@@ -744,7 +854,7 @@ export function Sales() {
                   </div>
                 )}
 
-                {line.product.is_dual_priced && (
+                {line.product.is_dual_priced && priceTierOpen && (
                   <div className="price-tier-toggle" style={{ gridColumn: "1 / -1" }}>
                     <button
                       type="button"
@@ -777,18 +887,19 @@ export function Sales() {
             )}
           </div>
 
-          <label className="field">
-            <span>{t("invoiceDiscount")}</span>
-            <input
-              type="number"
-              min="0"
-              step="0.01"
-              value={invoiceDiscount}
-              onChange={(event) => setInvoiceDiscount(event.target.value)}
-              placeholder="0"
-            />
-          </label>
+          </div>
 
+          {/* Fixed footer — customer, invoice discount, payment section,
+              totals, and both checkout actions. Always rendered at natural
+              size, never inside the scrollable zone above, so none of it
+              can be pushed out of view or clipped regardless of cart size.
+              Customer selection in particular used to sit inside the
+              scrollable zone (above the cart lines it now follows) and
+              would get buried below the last cart line once the cart grew
+              past what fit on screen — moved here specifically so it's
+              always reachable without scrolling, same reasoning as the
+              payment section below it. */}
+          <div className="cart-fixed-footer">
           <label className="field">
             <span>{t("customer")}{remainingAfterPayment > 0 ? " *" : ` (${t("optional")})`}</span>
             <CustomerCombobox value={customerId} customers={customers} onChange={setCustomerId} />
@@ -818,9 +929,49 @@ export function Sales() {
             </div>
           )}
 
+          {invoiceDiscountOpen || invoiceDiscountValue > 0 ? (
+            <label className="field">
+              <span>{t("invoiceDiscount")}</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={invoiceDiscount}
+                onChange={(event) => setInvoiceDiscount(event.target.value)}
+                placeholder="0"
+                autoFocus={invoiceDiscountOpen}
+              />
+            </label>
+          ) : (
+            <button type="button" className="add-discount-link" onClick={() => setInvoiceDiscountOpen(true)}>
+              <Plus size={14} /> {t("invoiceDiscount")}
+            </button>
+          )}
+
           {/* Payment breakdown — split across cash/card lines. No check option
               here: this shop doesn't accept checks from customers. Purchases.tsx
-              still has cash/card/check for paying suppliers — untouched. */}
+              still has cash/card/check for paying suppliers — untouched.
+              Collapsed to a single compact link (same idea and styling as
+              the invoice-discount link above) when no line has been added
+              yet — the common single-full-payment case shouldn't pay for a
+              bordered header+hint-text panel it isn't using. The panel
+              (with its header, since >=1 line now needs the "add another"
+              button and remove controls) only renders once a line exists. */}
+          {paymentLines.length === 0 ? (
+            <div className="payment-collapsed-row">
+              <button type="button" className="add-discount-link" onClick={addPaymentLine}>
+                <Wallet size={14} /> {t("paymentLinesTitle")}
+              </button>
+              {/* Explicit "this will be recorded as credit" notice — restores
+                  the signal that used to live in the always-rendered empty-
+                  state hint text, so a cashier who leaves payment untouched
+                  still sees clearly (not just by absence of a field) that the
+                  sale is going on the customer's account. */}
+              {remainingAfterPayment > 0 && (
+                <small className="credit-sale-hint">{t("paymentLinesEmptyHint")}</small>
+              )}
+            </div>
+          ) : (
           <div className="payment-lines-panel">
             <div className="payment-lines-header">
               <span>
@@ -833,17 +984,29 @@ export function Sales() {
               </button>
             </div>
 
-            {paymentLines.length === 0 && <p className="payment-lines-empty">{t("paymentLinesEmptyHint")}</p>}
-
             {paymentLines.map((line) => (
               <div className="payment-line-row" key={line.key}>
-                <select
-                  value={line.method}
-                  onChange={(event) => updatePaymentLine(line.key, { method: event.target.value as PaymentLine["method"] })}
-                >
-                  <option value="cash">{t("cash")}</option>
-                  <option value="card">{t("card")}</option>
-                </select>
+                {/* Reuses the existing price-tier-button/price-tier-selected
+                    pill pattern (see the dual-price toggle above) instead of
+                    a native <select> — same selected-state styling, just a
+                    plain single-line label instead of the tier label+price
+                    pair. */}
+                <div className="payment-method-toggle">
+                  <button
+                    type="button"
+                    className={`price-tier-button ${line.method === "cash" ? "price-tier-selected" : ""}`}
+                    onClick={() => updatePaymentLine(line.key, { method: "cash" })}
+                  >
+                    {t("cash")}
+                  </button>
+                  <button
+                    type="button"
+                    className={`price-tier-button ${line.method === "card" ? "price-tier-selected" : ""}`}
+                    onClick={() => updatePaymentLine(line.key, { method: "card" })}
+                  >
+                    {t("card")}
+                  </button>
+                </div>
                 <input
                   type="number"
                   min="0"
@@ -854,11 +1017,11 @@ export function Sales() {
                 />
                 <button
                   type="button"
-                  className="icon-button danger"
+                  className="icon-button tiny danger"
                   onClick={() => removePaymentLine(line.key)}
                   aria-label={t("remove")}
                 >
-                  <Trash2 size={16} />
+                  <Trash2 size={14} />
                 </button>
               </div>
             ))}
@@ -881,6 +1044,7 @@ export function Sales() {
               </div>
             )}
           </div>
+          )}
 
           {(itemDiscountsTotal > 0 || invoiceDiscountValue > 0) && (
             <>
@@ -920,6 +1084,7 @@ export function Sales() {
             >
               {status === "submitting" ? t("loading") : t("checkout")}
             </button>
+          </div>
           </div>
         </aside>
       </section>

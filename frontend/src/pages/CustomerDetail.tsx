@@ -3,6 +3,7 @@ import { ArrowLeft, Award, DollarSign, Gift, Settings2, Sparkles } from "lucide-
 
 import {
   adjustLoyaltyPoints,
+  createCustomerPayment,
   getCustomerLedger,
   getErrorMessage,
   getLoyaltyBalance,
@@ -14,6 +15,7 @@ import { canAdjustLoyaltyPoints } from "../permissions";
 import { getSession } from "../session";
 import type { CustomerLedger, LoyaltyBalance, LoyaltyRewardSuggestion, LoyaltyTransaction } from "../types";
 import { dateToJalaliStr } from "../utils/jalali";
+import { SaleDetailView } from "../components/SaleDetailView";
 
 type CustomerDetailProps = {
   customerId: number;
@@ -36,6 +38,18 @@ export function CustomerDetail({ customerId, customerName, onBack }: CustomerDet
   const [adjustReason, setAdjustReason] = useState("");
   const [adjustSubmitting, setAdjustSubmitting] = useState(false);
   const [adjustError, setAdjustError] = useState("");
+
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card">("card");
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
+  /** Set when a ledger "sale" row is clicked, to drill into the full
+   * invoice (line items, discounts, etc.) — the ledger row itself only
+   * ever shows a one-line summary (date/reference/total), which is why
+   * "sales invoices aren't visible" even though the row is right there. */
+  const [viewingSaleId, setViewingSaleId] = useState<number | null>(null);
 
   const canAdjust = canAdjustLoyaltyPoints(getSession()?.role ?? "");
 
@@ -71,6 +85,35 @@ export function CustomerDetail({ customerId, customerName, onBack }: CustomerDet
     loadLoyalty();
   }, [loadLedger, loadLoyalty]);
 
+  async function handlePaymentSubmit(event: FormEvent) {
+    event.preventDefault();
+    const amount = Number(paymentAmount);
+    if (!amount || amount <= 0) return;
+    setPaymentError("");
+    setPaymentSuccess(false);
+    // Immediate client-side check, same rule the backend now enforces
+    // (services/financials.py::record_customer_payment) — catches the
+    // mistake before a round trip instead of only after a 422.
+    if (ledger && amount > Number(ledger.balance)) {
+      setPaymentError(t("paymentExceedsBalance"));
+      return;
+    }
+    setPaymentSubmitting(true);
+    try {
+      await createCustomerPayment(customerId, { amount, method: paymentMethod });
+      setPaymentAmount("");
+      setPaymentSuccess(true);
+      // Balance + entries both live on the ledger response, so reloading it
+      // is enough to reflect the new payment everywhere on this page —
+      // no separate "refresh balance" call needed.
+      await loadLedger();
+    } catch (err) {
+      setPaymentError(getErrorMessage(err, t));
+    } finally {
+      setPaymentSubmitting(false);
+    }
+  }
+
   async function handleAdjustSubmit(event: FormEvent) {
     event.preventDefault();
     const delta = Number(adjustDelta);
@@ -97,6 +140,10 @@ export function CustomerDetail({ customerId, customerName, onBack }: CustomerDet
     adjust: t("pointsAdjust"),
   };
 
+  if (viewingSaleId !== null) {
+    return <SaleDetailView saleId={viewingSaleId} onBack={() => setViewingSaleId(null)} />;
+  }
+
   return (
     <main className="main-content">
       <header className="page-header">
@@ -120,6 +167,19 @@ export function CustomerDetail({ customerId, customerName, onBack }: CustomerDet
               <div className="metric-icon"><DollarSign /></div>
               <p>{t("balance")}</p>
               <strong>{money(Number(ledger.balance))}</strong>
+              {Number(ledger.balance) > 0 && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ marginTop: 8 }}
+                  onClick={() => {
+                    setShowPaymentForm((current) => !current);
+                    setPaymentSuccess(false);
+                  }}
+                >
+                  {t("recordPayment")}
+                </button>
+              )}
             </article>
             <article className="metric-card">
               <div className="metric-icon"><Gift /></div>
@@ -152,6 +212,53 @@ export function CustomerDetail({ customerId, customerName, onBack }: CustomerDet
               </article>
             )}
           </section>
+
+          {showPaymentForm && (
+            <section className="panel" style={{ marginBottom: 16 }}>
+              <form className="form-grid" onSubmit={handlePaymentSubmit}>
+                {paymentError && <div className="feedback-banner error full-span">{paymentError}</div>}
+                {paymentSuccess && (
+                  <div className="feedback-banner success full-span">{t("paymentRecordedSuccess")}</div>
+                )}
+                <label className="field">
+                  <span>{t("recordPaymentAmount")}</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={paymentAmount}
+                    onChange={(event) => setPaymentAmount(event.target.value)}
+                    placeholder="0"
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>{t("paymentLinesTitle")}</span>
+                  <div className="payment-method-toggle">
+                    <button
+                      type="button"
+                      className={`price-tier-button ${paymentMethod === "cash" ? "price-tier-selected" : ""}`}
+                      onClick={() => setPaymentMethod("cash")}
+                    >
+                      {t("cash")}
+                    </button>
+                    <button
+                      type="button"
+                      className={`price-tier-button ${paymentMethod === "card" ? "price-tier-selected" : ""}`}
+                      onClick={() => setPaymentMethod("card")}
+                    >
+                      {t("card")}
+                    </button>
+                  </div>
+                </label>
+                <div className="form-actions full-span">
+                  <button className="primary-button" type="submit" disabled={paymentSubmitting}>
+                    {paymentSubmitting ? t("loading") : t("recordPayment")}
+                  </button>
+                </div>
+              </form>
+            </section>
+          )}
 
           {showAdjustForm && canAdjust && (
             <section className="panel" style={{ marginBottom: 16 }}>
@@ -267,8 +374,19 @@ export function CustomerDetail({ customerId, customerName, onBack }: CustomerDet
               <span>{t("credit")}</span>
               <span>{t("balance")}</span>
             </div>
-            {ledger.entries.map((entry) => (
-              <div className="inventory-row animated-line" key={entry.id}>
+            {ledger.entries.map((entry) => {
+              // Sale rows drill into the full invoice (SaleDetailView) —
+              // payment rows have nothing to drill into. entry.id is
+              // "sale-{numeric id}" from the backend (services/financials.py).
+              const isSale = entry.entry_type === "sale";
+              const RowTag = isSale ? "button" : "div";
+              return (
+              <RowTag
+                type={isSale ? "button" : undefined}
+                className={`inventory-row animated-line ${isSale ? "invoice-history-row" : ""}`}
+                key={entry.id}
+                onClick={isSale ? () => setViewingSaleId(Number(entry.id.replace("sale-", ""))) : undefined}
+              >
                 <time>
                   {new Intl.DateTimeFormat(locale, {
                     dateStyle: "medium",
@@ -278,12 +396,24 @@ export function CustomerDetail({ customerId, customerName, onBack }: CustomerDet
                 <span>{entry.reference}</span>
                 <span className={`type-pill ${entry.entry_type}`}>
                   {t(entry.entry_type === "sale" ? "sale" : entry.entry_type === "payment" ? "payment" : "purchase")}
+                  {/* Flags نسیه/partial invoices right in the ledger, not just
+                      "a sale happened" — the thing the shopkeeper actually
+                      needs to notice at a glance. Nested inside the same
+                      cell (not a sibling column) so rows without a status
+                      don't shift the debit/credit/balance columns out of
+                      alignment with the 6-column header above. */}
+                  {entry.payment_status && entry.payment_status !== "paid" && (
+                    <span className={`credit-status-badge ${entry.payment_status}`}>
+                      {t(entry.payment_status === "unpaid" ? "unpaidStatus" : "partialStatus")}
+                    </span>
+                  )}
                 </span>
                 <strong className="quantity-positive">{Number(entry.debit) > 0 ? money(Number(entry.debit)) : "—"}</strong>
                 <strong className="quantity-negative">{Number(entry.credit) > 0 ? money(Number(entry.credit)) : "—"}</strong>
                 <strong>{money(Number(entry.running_balance))}</strong>
-              </div>
-            ))}
+              </RowTag>
+              );
+            })}
             {!loading && ledger.entries.length === 0 && (
               <div className="empty-state">{t("noTransactions")}</div>
             )}

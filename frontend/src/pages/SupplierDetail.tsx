@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { ArrowLeft, DollarSign } from "lucide-react";
 
-import { getSupplierLedger } from "../api";
+import { createSupplierPayment, getErrorMessage, getSupplierLedger } from "../api";
 import { useI18n } from "../i18n";
 import type { SupplierLedger } from "../types";
+import { PurchaseDetailView } from "../components/PurchaseDetailView";
 
 type SupplierDetailProps = {
   supplierId: number;
@@ -16,6 +17,14 @@ export function SupplierDetail({ supplierId, supplierName, onBack }: SupplierDet
   const [ledger, setLedger] = useState<SupplierLedger | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"cash" | "card">("card");
+  const [paymentSubmitting, setPaymentSubmitting] = useState(false);
+  const [paymentError, setPaymentError] = useState("");
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
+  const [viewingPurchaseId, setViewingPurchaseId] = useState<number | null>(null);
 
   const loadLedger = useCallback(async () => {
     setLoading(true);
@@ -32,6 +41,35 @@ export function SupplierDetail({ supplierId, supplierName, onBack }: SupplierDet
   useEffect(() => {
     loadLedger();
   }, [loadLedger]);
+
+  async function handlePaymentSubmit(event: FormEvent) {
+    event.preventDefault();
+    const amount = Number(paymentAmount);
+    if (!amount || amount <= 0) return;
+    setPaymentError("");
+    setPaymentSuccess(false);
+    // Immediate client-side check, same rule the backend now enforces
+    // (services/financials.py::record_supplier_payment).
+    if (ledger && amount > Number(ledger.balance)) {
+      setPaymentError(t("paymentExceedsBalance"));
+      return;
+    }
+    setPaymentSubmitting(true);
+    try {
+      await createSupplierPayment(supplierId, { amount, method: paymentMethod });
+      setPaymentAmount("");
+      setPaymentSuccess(true);
+      await loadLedger();
+    } catch (err) {
+      setPaymentError(getErrorMessage(err, t));
+    } finally {
+      setPaymentSubmitting(false);
+    }
+  }
+
+  if (viewingPurchaseId !== null) {
+    return <PurchaseDetailView purchaseId={viewingPurchaseId} onBack={() => setViewingPurchaseId(null)} />;
+  }
 
   return (
     <main className="main-content">
@@ -56,8 +94,68 @@ export function SupplierDetail({ supplierId, supplierName, onBack }: SupplierDet
               <div className="metric-icon"><DollarSign /></div>
               <p>{t("balance")}</p>
               <strong>{money(Number(ledger.balance))}</strong>
+              {Number(ledger.balance) > 0 && (
+                <button
+                  type="button"
+                  className="secondary-button"
+                  style={{ marginTop: 8 }}
+                  onClick={() => {
+                    setShowPaymentForm((current) => !current);
+                    setPaymentSuccess(false);
+                  }}
+                >
+                  {t("recordPayment")}
+                </button>
+              )}
             </article>
           </section>
+
+          {showPaymentForm && (
+            <section className="panel" style={{ marginBottom: 16 }}>
+              <form className="form-grid" onSubmit={handlePaymentSubmit}>
+                {paymentError && <div className="feedback-banner error full-span">{paymentError}</div>}
+                {paymentSuccess && (
+                  <div className="feedback-banner success full-span">{t("paymentRecordedSuccess")}</div>
+                )}
+                <label className="field">
+                  <span>{t("recordPaymentAmount")}</span>
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={paymentAmount}
+                    onChange={(event) => setPaymentAmount(event.target.value)}
+                    placeholder="0"
+                    required
+                  />
+                </label>
+                <label className="field">
+                  <span>{t("paymentLinesTitle")}</span>
+                  <div className="payment-method-toggle">
+                    <button
+                      type="button"
+                      className={`price-tier-button ${paymentMethod === "cash" ? "price-tier-selected" : ""}`}
+                      onClick={() => setPaymentMethod("cash")}
+                    >
+                      {t("cash")}
+                    </button>
+                    <button
+                      type="button"
+                      className={`price-tier-button ${paymentMethod === "card" ? "price-tier-selected" : ""}`}
+                      onClick={() => setPaymentMethod("card")}
+                    >
+                      {t("card")}
+                    </button>
+                  </div>
+                </label>
+                <div className="form-actions full-span">
+                  <button className="primary-button" type="submit" disabled={paymentSubmitting}>
+                    {paymentSubmitting ? t("loading") : t("recordPayment")}
+                  </button>
+                </div>
+              </form>
+            </section>
+          )}
 
           <section className="panel ledger-table">
             <div className="inventory-row inventory-head">
@@ -68,8 +166,19 @@ export function SupplierDetail({ supplierId, supplierName, onBack }: SupplierDet
               <span>{t("credit")}</span>
               <span>{t("balance")}</span>
             </div>
-            {ledger.entries.map((entry) => (
-              <div className="inventory-row animated-line" key={entry.id}>
+            {ledger.entries.map((entry) => {
+              // Purchase rows drill into the full invoice (PurchaseDetailView)
+              // — entry.id is "purchase-{numeric id}" from the backend
+              // (services/financials.py::supplier_ledger).
+              const isPurchase = entry.entry_type === "purchase";
+              const RowTag = isPurchase ? "button" : "div";
+              return (
+              <RowTag
+                type={isPurchase ? "button" : undefined}
+                className={`inventory-row animated-line ${isPurchase ? "invoice-history-row" : ""}`}
+                key={entry.id}
+                onClick={isPurchase ? () => setViewingPurchaseId(Number(entry.id.replace("purchase-", ""))) : undefined}
+              >
                 <time>
                   {new Intl.DateTimeFormat(locale, {
                     dateStyle: "medium",
@@ -79,12 +188,18 @@ export function SupplierDetail({ supplierId, supplierName, onBack }: SupplierDet
                 <span>{entry.reference}</span>
                 <span className={`type-pill ${entry.entry_type}`}>
                   {t(entry.entry_type === "purchase" ? "purchase" : "payment")}
+                  {entry.payment_status && entry.payment_status !== "paid" && (
+                    <span className={`credit-status-badge ${entry.payment_status}`}>
+                      {t(entry.payment_status === "unpaid" ? "unpaidStatus" : "partialStatus")}
+                    </span>
+                  )}
                 </span>
                 <strong className="quantity-positive">{Number(entry.debit) > 0 ? money(Number(entry.debit)) : "—"}</strong>
                 <strong className="quantity-negative">{Number(entry.credit) > 0 ? money(Number(entry.credit)) : "—"}</strong>
                 <strong>{money(Number(entry.running_balance))}</strong>
-              </div>
-            ))}
+              </RowTag>
+              );
+            })}
             {!loading && ledger.entries.length === 0 && (
               <div className="empty-state">{t("noTransactions")}</div>
             )}

@@ -264,6 +264,19 @@ export async function getCustomerLedger(customerId: number): Promise<CustomerLed
   return request<CustomerLedger>(`${apiBaseUrl}/customers/${customerId}/ledger`);
 }
 
+/** Records an unallocated payment against the customer's overall balance
+ * (no document_id) — settles down whatever they currently owe rather than
+ * paying off one specific invoice. */
+export async function createCustomerPayment(
+  customerId: number,
+  data: { amount: number; method: "cash" | "card" },
+): Promise<void> {
+  await request<unknown>(`${apiBaseUrl}/customers/${customerId}/payments`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 export async function getLoyaltyBalance(customerId: number, saleTotal?: number): Promise<LoyaltyBalance> {
   const query = saleTotal !== undefined ? `?sale_total=${saleTotal}` : "";
   return request<LoyaltyBalance>(`${apiBaseUrl}/customers/${customerId}/loyalty${query}`);
@@ -350,6 +363,18 @@ export async function updateSupplier(
 
 export async function getSupplierLedger(supplierId: number): Promise<SupplierLedger> {
   return request<SupplierLedger>(`${apiBaseUrl}/suppliers/${supplierId}/ledger`);
+}
+
+/** Records an unallocated payment against the supplier's overall balance
+ * (no document_id) — same shape as createCustomerPayment. */
+export async function createSupplierPayment(
+  supplierId: number,
+  data: { amount: number; method: "cash" | "card" },
+): Promise<void> {
+  await request<unknown>(`${apiBaseUrl}/suppliers/${supplierId}/payments`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
 }
 
 export async function createSale(data: SaleCreate): Promise<Sale> {
