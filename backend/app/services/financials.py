@@ -55,17 +55,37 @@ def record_supplier_payment(database: Session, supplier: Supplier, data: Payment
         database.commit(); database.refresh(payment)
     return payment
 
+def _build_ledger(events: list) -> list[dict]:
+    """Accumulate the running balance oldest-first, then hand the rows back
+    newest-first.
+
+    The running balance can only be computed forwards in time, but a party's
+    ledger is read to answer "did the payment I just recorded land?" — and
+    with a real trading history behind it, a party can easily have hundreds
+    of rows. Returning oldest-first buried every new payment at the very
+    bottom of that list, which looked exactly like the payment had not been
+    saved at all. Every other list in this app (sales, expenses, checks)
+    already reads newest-first; this was the odd one out.
+
+    Each row's running_balance still means "the balance as of this entry",
+    which is what it always meant — only the order they are handed back
+    changed.
+    """
+    balance = Decimal("0")
+    result = []
+    for occurred_at, _, entry in sorted(events, key=lambda item: (item[0], item[1])):
+        balance += entry["debit"] - entry["credit"]
+        result.append({**entry, "occurred_at": occurred_at, "running_balance": balance})
+    result.reverse()
+    return result
+
 def customer_ledger(database: Session, customer: Customer) -> list[dict]:
     events = []
     for sale in database.scalars(select(Sale).where(Sale.customer_id == customer.id)):
         events.append((sale.created_at, 0, {"id": f"sale-{sale.id}", "entry_type": "sale", "reference": sale.invoice_number, "description": "فاکتور فروش", "debit": sale.total, "credit": Decimal("0"), "payment_status": sale.payment_status}))
     for payment in database.scalars(select(CustomerPayment).where(CustomerPayment.customer_id == customer.id)):
         events.append((payment.paid_at, 1, {"id": f"payment-{payment.id}", "entry_type": "payment", "reference": payment.reference or f"REC-{payment.id:05d}", "description": "دریافت از مشتری", "debit": Decimal("0"), "credit": payment.amount, "payment_status": None}))
-    balance = Decimal("0"); result = []
-    for occurred_at, _, entry in sorted(events, key=lambda item: (item[0], item[1])):
-        balance += entry["debit"] - entry["credit"]
-        result.append({**entry, "occurred_at": occurred_at, "running_balance": balance})
-    return result
+    return _build_ledger(events)
 
 def supplier_ledger(database: Session, supplier: Supplier) -> list[dict]:
     events = []
@@ -73,8 +93,4 @@ def supplier_ledger(database: Session, supplier: Supplier) -> list[dict]:
         events.append((purchase.created_at, 0, {"id": f"purchase-{purchase.id}", "entry_type": "purchase", "reference": purchase.invoice_number, "description": "فاکتور خرید", "debit": purchase.total, "credit": Decimal("0"), "payment_status": purchase.payment_status}))
     for payment in database.scalars(select(SupplierPayment).where(SupplierPayment.supplier_id == supplier.id)):
         events.append((payment.paid_at, 1, {"id": f"payment-{payment.id}", "entry_type": "payment", "reference": payment.reference or f"PAY-{payment.id:05d}", "description": "پرداخت به تأمین‌کننده", "debit": Decimal("0"), "credit": payment.amount, "payment_status": None}))
-    balance = Decimal("0"); result = []
-    for occurred_at, _, entry in sorted(events, key=lambda item: (item[0], item[1])):
-        balance += entry["debit"] - entry["credit"]
-        result.append({**entry, "occurred_at": occurred_at, "running_balance": balance})
-    return result
+    return _build_ledger(events)
