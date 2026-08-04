@@ -1,7 +1,35 @@
 # MARKETA — گزارش جامع ممیزی امکانات
 
-## تاریخ: ۶ مرداد ۱۴۰۵ (به‌روزرسانی نهم)
+## تاریخ: ۱۳ مرداد ۱۴۰۵ (به‌روزرسانی دهم)
 ## نسخه مخزن: 0.1.0
+
+> **به‌روزرسانی دهم (این دور) — بزرگ‌ترین جهش از زمان ساخت باشگاه مشتریان.**
+> پنج کامیت، و برخلاف چند دور اخیر که عمدتاً رفع باگ و بازآرایی بودند، این دور
+> **دو دامنه‌ی کاملاً صفر را باز کرد**:
+>
+> ۱. **مدیریت هزینه و حقوق و دستمزد** (دامنه‌ی ۷، که از روز اول ۰٪ بود) — سه
+> جدول جدید (`Expense`, `SalaryPayment`, `SalaryAdvance`) با مایگریشن واقعی،
+> ۹ endpoint، و صفحه‌ی «هزینه‌ها» با دو تب. مهم‌تر از خودِ فیچر: حالا **سود
+> خالص** واقعاً قابل‌محاسبه است (`net_profit()`), یعنی برای اولین بار
+> مغازه‌دار می‌تواند بپرسد «چقدر پول توی جیبم می‌ماند؟» — سوالی که تا این
+> دور هیچ‌جای اپ جواب نداشت. مالیات/بیمه عمداً خودکار محاسبه نمی‌شود (تصمیم
+> صاحب محصول، ۱۴۰۵/۰۵/۱۲ — نرخ‌ها سالانه با مصوبه‌ی دولت عوض می‌شوند و
+> hardcode کردنشان هرسال از کار می‌افتد).
+>
+> ۲. **گزارش نرخ تورم داخلی** — کاملاً خارج از فهرست ویژگی‌های اصلی، ولی
+> عمیق‌ترین گزارش تحلیلی‌ای که این اپ تا امروز داشته: شاخص قیمت (Laspeyres)،
+> شاخص حجم فروش/رکود، شاخص سود واقعی، ماتریس تشخیصی چهارخانه‌ای
+> (رونق/رکود تورمی/رقابت قیمتی/رکود واقعی)، تاثیر تورم بر درآمد (اسمی در
+> مقابل واقعی)، شکست دسته‌بندی، و راهنمای اصطلاحات. با تست‌های دستی‌محاسبه‌شده
+> (`test_inflation_rate.py`) تایید شد.
+>
+> **همچنین**: گزارش نزدیک انقضا (ویجت داشبورد + تب گزارش + نمای فیلترشده‌ی
+> محصولات، با چهار باند رنگی)، ساده‌سازی روش پرداخت فروش (حذف چک از سمت
+> مشتری، پیش‌فرض کارت)، بازسازی چیدمان سبد فروش (تضمین دیده‌شدن اقلام،
+> فوتر ثابت)، **حذف کامل کالای امانی** (به تشخیص صاحب محصول اشتباه ساخته
+> شده بود)، و **جایگزینی کامل seed با یک سال شبیه‌سازی‌شده‌ی فروشگاه واقعی**
+> (~۳۸.۷ هزار فاکتور، ~۲۰۸ هزار تراکنش انبار) که برای اولین بار همه‌ی
+> گزارش‌ها را با داده‌ی معنادار پر می‌کند.
 
 > این نسخه به‌روزرسانی کامل نسخه‌ی ۲۰ تیر ۱۴۰۵ است، پس از چند دور کار متمرکز روی
 > صندوق/شیفت، چک‌های دریافتی/پرداختی، ویرایش فاکتور فروش/خرید، تعلیق فاکتور،
@@ -113,15 +141,20 @@
 
 ## Section A — Executive Summary
 
-| Metric | ۲۰ تیر | ۶ مرداد (2nd) | ۶ مرداد (3rd) | ۶ مرداد (4th) | ۶ مرداد (5th) | ۶ مرداد (6th) | ۶ مرداد (7th) | ۶ مرداد (8th) | ۶ مرداد (current, 9th) |
-|--------|---------|---------|---------|---------|---------|---------|---------|---------|---------|
-| Product completion | ~8% | ~19% | ~29% | ~30% | ~31% | ~32% | ~32% (UI reorg, not new scope) | ~32% (unchanged — backend-only security fix) | **~33%** (+ live purchase-profit calculator, اشانتیون support; several loyalty bugfixes, no net new scope there) |
-| Backend completion | ~12% | ~27% | ~38% | ~39% | ~40% | ~41% | **~41%** (+1 read-only report) | ~41% (unchanged — hardened existing auth internals, no new endpoints) | ~41% (unchanged — this round's backend work was bugfixes/removal, not new endpoints; `Sale.loyalty_membership_just_earned` is a transient field, not persisted) |
-| Frontend completion | ~6% | ~22% | ~32% | ~33% | ~34% | ~35% | ~35% (reorganized, not expanded) | ~35% (unchanged — zero frontend changes needed) | **~37%** (purchase profit calculator + اشانتیون UI, post-checkout loyalty prompts, quick-add-customer flow, sidebar collapse/grouping — all genuinely new UI surface) |
-| Test coverage maturity | Low (28 tests) | Low-Medium (39 tests) | Medium (54 tests) | Medium (60 tests) | Medium (69 tests) | Medium (78 tests) | Medium (**80 unit tests**; first Playwright UI-structure check this round, still no formal frontend test framework) | Medium (**82 unit tests**; +2 net auth tests covering JWT structure and legacy-token rejection) | Medium (**90 unit tests** verified live this round — `pytest tests/ -q` → 85 passed, 5 pre-existing/unrelated failures; net effect of −3 from removing the category-coefficient tests and +3 for the new post-checkout-membership tests; the purchase profit calculator and اشانتیون logic have **no unit tests**, only ad-hoc live Playwright verification — see Section G) |
-| Security maturity | Very Low (0 protected) | Low-Medium (most protected, 5 route files wide open) | Medium-High — real login wired end-to-end, bcrypt, `SECRET_KEY` fail-fast, every route role-protected | Medium-High — unchanged | Medium-High — unchanged | Medium-High — unchanged | Medium-High — unchanged (same endpoints, same roles, just relocated in the UI) | **High** — the last cryptographic weak point (custom SHA256 token format) replaced with a standards-compliant JWT (HS256, `sub`/`iat`/`exp`) | High — unchanged this round (no auth/security work) |
-| Production-readiness | Not production-ready | Not production-ready | Still not production-ready (no tax/expense/double-entry), but auth is no longer a blocker for a controlled pilot | Unchanged | Unchanged | Unchanged | Unchanged — still blocked on tax/expense/double-entry | Unchanged — still blocked on tax/expense/double-entry (the auth/token layer itself is no longer a blocker at all) | Unchanged — still blocked on tax/expense/double-entry |
-| Current stage | Prototype | Advanced prototype | Advanced prototype, auth-complete | Advanced prototype, auth+loyalty-complete | Advanced prototype, loyalty essentially feature-complete | Advanced prototype, loyalty program fully closes out the original design conversation | **Advanced prototype — loyalty club now has its own dedicated, discoverable home in the UI** (Sidebar → باشگاه مشتریان) instead of being buried in a Reports tab; Reports itself now only shows the redemption-discount activity a report page should own | **Advanced prototype — the token format is now a real JWT, not a hand-rolled scheme**; purely a security-hardening round, no feature/UI change | **Advanced prototype — a genuine bugfix + hardening round for loyalty, plus one new capability beyond the original feature list**: a live purchase-price/sale-price profit calculator for evaluating a ویزیتور's deal before committing to it, including a dedicated "اشانتیون" (free promotional item) mode |
+> **خلاصه‌ی این دور در یک نگاه**: تکمیل کلی از **~۳۳٪ به ~۳۹٪** رسید — بزرگ‌ترین
+> پرش از زمان ساخت باشگاه مشتریان. دلیل اصلی: دامنه‌ی «مدیریت هزینه» از ۰٪ به
+> ~۶۲٪ و «حسابداری مالی» از ۰٪ به ~۱۰٪ رفت (سود خالص واقعی)، و «گزارش‌ها» از
+> ۶۲٪ به ~۷۵٪. در مقابل، دو دامنه **عقب رفتند** چون کالای امانی عمداً حذف شد.
+
+| Metric | ۲۰ تیر | ۶ مرداد (2nd) | ۶ مرداد (3rd) | ۶ مرداد (4th) | ۶ مرداد (5th) | ۶ مرداد (6th) | ۶ مرداد (7th) | ۶ مرداد (8th) | ۶ مرداد (9th) | ۱۳ مرداد (current, 10th) |
+|--------|---------|---------|---------|---------|---------|---------|---------|---------|---------|---------|
+| Product completion | ~8% | ~19% | ~29% | ~30% | ~31% | ~32% | ~32% (UI reorg, not new scope) | ~32% (unchanged — backend-only security fix) | **~33%** (+ live purchase-profit calculator, اشانتیون support; several loyalty bugfixes, no net new scope there) | **~39%** (expense+payroll domain opened from zero, inflation-rate report, near-expiry, net profit; minus the deliberately-removed consignment feature) |
+| Backend completion | ~12% | ~27% | ~38% | ~39% | ~40% | ~41% | **~41%** (+1 read-only report) | ~41% (unchanged — hardened existing auth internals, no new endpoints) | ~41% (unchanged — this round's backend work was bugfixes/removal, not new endpoints; `Sale.loyalty_membership_just_earned` is a transient field, not persisted) | **~48%** (9 expense/payroll endpoints, 4 new report endpoints incl. the composite inflation-rate one, ; a real migration for three new tables) |
+| Frontend completion | ~6% | ~22% | ~32% | ~33% | ~34% | ~35% | ~35% (reorganized, not expanded) | ~35% (unchanged — zero frontend changes needed) | **~37%** (purchase profit calculator + اشانتیون UI, post-checkout loyalty prompts, quick-add-customer flow, sidebar collapse/grouping — all genuinely new UI surface) | **~42%** (هزینه‌ها page with two role-gated tabs, نرخ تورم report tab with glossary, نزدیک انقضا widget+tab+filtered products view, cart-panel restructure) |
+| Test coverage maturity | Low (28 tests) | Low-Medium (39 tests) | Medium (54 tests) | Medium (60 tests) | Medium (69 tests) | Medium (78 tests) | Medium (**80 unit tests**; first Playwright UI-structure check this round, still no formal frontend test framework) | Medium (**82 unit tests**; +2 net auth tests covering JWT structure and legacy-token rejection) | Medium (**90 unit tests** verified live this round — `pytest tests/ -q` → 85 passed, 5 pre-existing/unrelated failures; net effect of −3 from removing the category-coefficient tests and +3 for the new post-checkout-membership tests; the purchase profit calculator and اشانتیون logic have **no unit tests**, only ad-hoc live Playwright verification — see Section G) | Medium (**109 tests collected**, 104 pass / same 5 pre-existing dual-pricing failures; +hand-computed inflation-rate tests, +expense/payroll tests incl. the salary-advance folding path; frontend still has no test framework) |
+| Security maturity | Very Low (0 protected) | Low-Medium (most protected, 5 route files wide open) | Medium-High — real login wired end-to-end, bcrypt, `SECRET_KEY` fail-fast, every route role-protected | Medium-High — unchanged | Medium-High — unchanged | Medium-High — unchanged | Medium-High — unchanged (same endpoints, same roles, just relocated in the UI) | **High** — the last cryptographic weak point (custom SHA256 token format) replaced with a standards-compliant JWT (HS256, `sub`/`iat`/`exp`) | High — unchanged this round (no auth/security work) | High — unchanged (payroll routes are the first admin-only-even-for-reads surface; verified the GET is gated too, not just the mutations) |
+| Production-readiness | Not production-ready | Not production-ready | Still not production-ready (no tax/expense/double-entry), but auth is no longer a blocker for a controlled pilot | Unchanged | Unchanged | Unchanged | Unchanged — still blocked on tax/expense/double-entry | Unchanged — still blocked on tax/expense/double-entry (the auth/token layer itself is no longer a blocker at all) | Unchanged — still blocked on tax/expense/double-entry | **Expense blocker cleared** — net profit is now real. Still blocked on tax and double-entry accounting for a commercial release; a controlled single-shop pilot is now genuinely plausible |
+| Current stage | Prototype | Advanced prototype | Advanced prototype, auth-complete | Advanced prototype, auth+loyalty-complete | Advanced prototype, loyalty essentially feature-complete | Advanced prototype, loyalty program fully closes out the original design conversation | **Advanced prototype — loyalty club now has its own dedicated, discoverable home in the UI** (Sidebar → باشگاه مشتریان) instead of being buried in a Reports tab; Reports itself now only shows the redemption-discount activity a report page should own | **Advanced prototype — the token format is now a real JWT, not a hand-rolled scheme**; purely a security-hardening round, no feature/UI change | **Advanced prototype — a genuine bugfix + hardening round for loyalty, plus one new capability beyond the original feature list**: a live purchase-price/sale-price profit calculator for evaluating a ویزیتور's deal before committing to it, including a dedicated "اشانتیون" (free promotional item) mode | **Advanced prototype — first round where the app can answer 'what did I actually earn?'**: operating costs and payroll now feed a real net-profit figure, and an internal inflation/recession index reads a full simulated year of trading data |
 
 > **Correction to the previous (8th) audit entry**: that round's Section H/Section I described `Category.loyalty_point_multiplier` as "kept, backend/API-only" after its UI was removed. That was inaccurate as of this round — the field itself (not just the UI) has been fully removed, since it was never part of the original loyalty spec. See row 13.3 and Section H below, now corrected against the actual current code (`grep`-verified: zero references to a category-level loyalty multiplier anywhere in `backend/app`).
 
@@ -132,19 +165,21 @@
 4. **Post-checkout loyalty membership moments** *(new)* — a sale that crosses the loyalty membership threshold for its already-attached customer now shows an immediate celebratory banner; a large no-customer sale above the threshold now offers a one-click "quick-register this customer" flow (name + optional phone only) that enrolls them for *future* purchases without retroactively touching the already-closed sale
 5. **Sales/Purchase transaction processing** — end-to-end with stock mutation, inventory logging, rollback, customer/supplier balance updates
 6. **Cashier shift management** — open/close with real cash reconciliation, cashier performance report, held/suspended invoices with a Chrome-tab-style switcher
-7. **Purchase payment flexibility** — split cash/card/check payment lines per purchase, full چک (check) lifecycle management, and کالای امانی (consignment) tracking, now with a one-click "mark whole invoice as consignment" toggle
+7. **Purchase payment flexibility** — split cash/card/check payment lines per purchase and full چک (check) lifecycle management. *(کالای امانی / consignment tracking was listed here in every previous audit; the product owner determined it had been built incorrectly and it was removed outright this round — see the note under Domain 4/12.)*
 8. **Invoice editing with audit trail** — both sales and purchases support permission-controlled line-item edits with a required reason, full before/after audit snapshot, and edit-history display
 9. **Consistent margin/profit accounting** — one shared formula (`lib/margin.ts` / its backend port `services/margin.py`) now drives per-item margin, invoice-level margin, the Products page margin column, Reports, loyalty point eligibility, *and* the new purchase profit calculator
-10. **Reports framework** — 13 report types (up from 6 at ۲۰ تیر) including dead-stock, cashier performance, outstanding consignment, and the loyalty reports, all with correct Jalali dates
+10. **Reports framework** — 17 report endpoints (up from 6 at ۲۰ تیر) including dead-stock, near-expiry, cashier performance, net profit, the loyalty reports and the new inflation-rate composite, all with correct Jalali dates
 11. **Inventory transaction traceability** — every stock change is logged via InventoryTransaction; `PATCH /products/{id}` can no longer bypass this (see Section F)
+12. **Expense & payroll management** *(new — opens a domain that was 0% since day one)* — `Expense`/`SalaryPayment`/`SalaryAdvance` with a real migration, user-manageable expense categories (free-text + datalist, deliberately not coupled to the product `Category` table), cash-vs-bank payment method on every outflow, optional receipt image, and مساعده (salary advance) as its own record that `create_salary_payment()` folds into the next payslip's deductions automatically rather than as a hand-typed number. Payroll is the app's first surface where **even reading** is admin-only, not just writing. Feeds `net_profit()`, so the app can finally answer "what's actually left?"
+13. **Internal inflation / recession index** *(new — beyond the original feature list)* — a Laspeyres price index plus its mirror volume index, a real-profit index (margin compression), a four-quadrant diagnosis (رونق / رکود تورمی / رقابت قیمتی / رکود واقعی) rendered as a plain-language sentence, revenue impact (nominal vs. inflation-adjusted growth), per-category breakdown with an independent sufficiency threshold, and a built-in glossary. Backed by hand-computed unit tests, not just "it runs"
+14. **A year of realistic demo data** *(new)* — the seed no longer creates a handful of sample rows; it simulates 1404/05/04→today day by day (~38.7k invoices, ~208k stock movements) entirely through the real services, with mixed basket sizes, footfall by hour and weekday, Nowruz/Ramadan seasonality and staggered per-category price inflation. This is what makes every report above testable with meaningful numbers instead of an empty state
 
-### Largest Gaps (6)
-1. **No tax support** — mandatory for legal compliance; still zero tax fields anywhere in the schema
-2. **No expense tracking** — cannot calculate real profit net of operating costs; no formal Gross/Net P&L
-3. **No invoice/receipt hardware printing** — `window.print()` browser print exists, but no thermal-printer/ESC-POS integration
-4. **No multi-warehouse** — single location only
-5. **No weighted goods or scale support** — essential for grocery
-6. **No customer credit-limit enforcement at checkout** — `process_sale()` still never reads `customer.credit_limit`
+### Largest Gaps (5)
+1. **No tax support** — mandatory for legal compliance; still zero tax fields anywhere in the schema. Now the single largest blocker, since expense tracking (the previous #2) is done
+2. **No invoice/receipt hardware printing** — `window.print()` browser print exists, but no thermal-printer/ESC-POS integration
+3. **No multi-warehouse** — single location only
+4. **No weighted goods or scale support** — essential for grocery. Explicitly acknowledged this round: the seed models فروش وزنی as 1kg packs because `quantity` is `Numeric(14,3)` (the DB *can* hold 2.350 kg) but the POS only offers integer +/- buttons. Deferred by the product owner, not overlooked
+5. **No customer credit-limit enforcement at checkout** — `process_sale()` still never reads `customer.credit_limit`. *(The new seed pre-checks the limit itself before offering a credit sale, which is why a year of simulated trading never breached it — that is seed-side discipline, not an app-side guard.)*
 
 > The loyalty program has no more deliberately-deferred items from the original design conversation as of this round — see Domain 13 below. What's left there is genuinely future scope (tier-based non-earning perks like free-shipping thresholds, a full loyalty-program admin dashboard with historical trend charts) rather than anything discussed and skipped. The purchase profit calculator (Domain 4) is a bonus capability beyond the original feature list entirely, not a tracked gap being closed.
 
@@ -164,23 +199,23 @@ Weighting method unchanged: 3 = critical workflow, 2 = important supporting feat
 |---|--------|------|---------|--------------|---------------|---------|------------|-----------|-----------------|
 | 1 | Sales & POS | **16** | 6 | 0 | 0 | **9** | **48%** | Demo-ready | +loyalty redemption in checkout |
 | 2 | Product Catalog | 12 | 2 | 0 | 0 | 11 | 47% | Demo-ready | unchanged |
-| 3 | Warehouse & Inventory | 7 | 4 | 0 | 0 | 16 | 32% | Prototype | unchanged this round |
-| 4 | Purchasing & Suppliers | **19** | 4 | 0 | 0 | 6 | **~72%** | Demo-ready | was 68% — +4.28 live profit calculator, +4.29 اشانتیون (free-item) support, both new this round (see 4.28/4.29) |
-| 5 | Financial Accounting | 0 | 0 | 0 | 0 | 31 | 0% | Missing | unchanged |
+| 3 | Warehouse & Inventory | **8** | 4 | 0 | 0 | **15** | **36%** | Prototype | was 32% — 3.19 near-expiry alerts now genuinely surfaced (dashboard widget + report tab + filtered products view), not just a stored date |
+| 4 | Purchasing & Suppliers | **17** | 4 | 0 | 0 | **6** | **~68%** | Demo-ready | **down from 72%** — 4.27 consignment and 4.29 اشانتیون-as-consignment were removed at the product owner's request (built incorrectly). A deliberate scope *reduction*, not a regression |
+| 5 | Financial Accounting | **1** | **2** | 0 | 0 | **28** | **~10%** | Prototype | was 0% — `net_profit()` gives a real Gross→Net P&L figure for a period. Still no chart of accounts, journal, general ledger, trial balance or double-entry |
 | 6 | Customers & Credit | **11** | **5** | 0 | 0 | **7** | **58%** | Demo-ready | was 50% — birth_date field, loyalty tie-in |
-| 7 | Expense Management | 0 | 0 | 0 | 0 | 13 | 0% | Missing | unchanged |
-| 8 | Reports & Dashboard | **23** | 4 | 0 | 0 | **11** | **62%** | Demo-ready | was 56% — +3 loyalty reports |
+| 7 | Expense Management | **8** | **1** | 0 | 0 | **4** | **~62%** | Demo-ready | was 0% — the whole domain opened this round: expenses, categories, recurring flag, cash/bank method, receipt image, payroll, salary advances, net-profit feed. Missing: budgets, approval workflow, expense-vs-budget variance, automatic tax/insurance |
+| 8 | Reports & Dashboard | **28** | 4 | 0 | 0 | **6** | **~75%** | Demo-ready | was 62% — +near-expiry, +net profit, +the inflation-rate composite (price index, volume index, real-profit index, diagnosis, revenue impact, category breakdown, two ranked tables) |
 | 9 | Intelligent Analytics | 0 | 0 | 0 | 0 | 25 | 0% | Missing | unchanged |
 | 10 | Security & Users | **19** | **1** | 0 | 0 | **4** | **83%** | **Demo-ready** | was 38% — real auth wired, bcrypt, every route protected, RBAC UI |
 | 11 | Daily Operations | 0 | 0 | 0 | 0 | 15 | 0% | Missing | unchanged |
-| 12 | Supermarket-Specific | 2 | 1 | 0 | 0 | 15 | 11% | Prototype | unchanged this round |
+| 12 | Supermarket-Specific | **0** | 1 | 0 | 0 | **17** | **~4%** | Prototype | **down from 11%** — consignment was this domain's only Full row and was removed. Now the weakest domain in the app alongside the 0% ones; weighted goods, scale integration and multi-packaging remain the real gaps here |
 | 13 | Marketing & Loyalty | **18** | **0** | 0 | 0 | 0 | **94%** | **Demo-ready** | was 92% — **correction, not new scope**: 13.3 restored to FULL, but not by rebuilding a category UI — the category-level override was fully removed as out-of-spec scope creep (see the correction note in Section A), leaving the always-complete product-level override as this row's whole (now unambiguous) status. Four real bugs also fixed this round (redemption-cap-after-edit, N+1 queries, tier-logic duplication, a dead duplicate line) — no score impact, they were bugs in already-Full rows, not missing features |
 | 14 | Multi-Branch | 0 | 0 | 0 | 0 | 14 | 0% | Missing | unchanged |
 | 15 | Hardware & Integration | 0 | 0 | 0 | 0 | 13 | 0% | Missing | unchanged |
-| 16 | UX & Design | **10** | 3 | 0 | 0 | 5 | **~55%** | Demo-ready | was 50% — sidebar reorganized into 6 grouped sections with a collapse/expand icon-rail mode (persisted, portaled tooltips) and a real scroll-fade affordance for the nav list; see 16.x rows |
+| 16 | UX & Design | **11** | 3 | 0 | 0 | 4 | **~60%** | Demo-ready | was 55% — cart panel restructured so items stay visible with a pinned checkout footer, payment method reduced to a pill toggle, report glossary, date-picker popup no longer collides with content (fixed in the shared component, so every picker benefits) |
 | 17 | Genius Engines | 0 | 0 | 0 | 0 | 9 | 0% | Missing | unchanged |
 
-**Overall weighted completion: ~33%** (up from ~32% — Purchasing and UX both gained real new scope this round; Marketing & Loyalty's change was a correction, not new scope)
+**Overall weighted completion: ~39%** (up from ~33%) — the largest single-round move since the loyalty build. Driven by Expense Management opening from 0%→62%, Financial Accounting 0%→10%, and Reports 62%→75%, partly offset by the deliberate removal of consignment (Purchasing 72%→68%, Supermarket-Specific 11%→4%).
 
 ---
 
@@ -251,16 +286,16 @@ All other Warehouse & Inventory rows (multi-warehouse, stocktaking, FIFO/weighte
 | 4.7 | Purchase tax | ❌ NOT | No tax field | Missing |
 | 4.8 | Return to supplier | ✅ FULL (backend) | `POST /adjustments/purchase-return/{id}` now behind `require_role` | No frontend workflow |
 | 4.9-4.14 | Requisitions, PO workflow, partial receipt | ❌ NOT | unchanged | Missing entirely |
-| 4.15 | Supplier payables | ✅ FULL | `Supplier.balance` — now correctly excludes outstanding consignment value (see 4.27) | — |
+| 4.15 | Supplier payables | ✅ FULL | `Supplier.balance` — now simply purchases minus payments, since the consignment carve-out was removed | — |
 | 4.16 | Supplier payments | ✅ FULL | `POST /suppliers/{id}/payments` | **No auth on this endpoint** — see Section E |
 | 4.17 | Payable cheques (چک) | ✅ FULL (was ❌ NOT) | `SupplierPayment.check_number/check_bank_name/check_due_date/check_status`; dedicated `services/checks.py` + `api/routes/checks.py`; full `Checks.tsx` page (list, filter, search, status change: pending/cleared/bounced) | — |
 | 4.18 | Due dates | ✅ FULL (was ❌ NOT) | `check_due_date` column, indexed; used throughout `Checks.tsx` and `CheckCalendarWidget.tsx` | Only checks have due dates — plain unpaid purchases still don't |
 | 4.19 | Payment-due alerts | ✅ FULL (was ❌ NOT) | `check_totals()` in `services/checks.py` computes 7-day/30-day due totals; `CheckReminderBanner.tsx` + `CheckTotalsWidget.tsx` surface them on relevant pages | — |
 | 4.20 | Purchase-by-supplier report | 🟡 PARTIAL | `GET /reports/supplier-balances` shows balance only; `supplier_ledger()` gives full purchase+payment history per supplier (`SupplierDetail.tsx`) | Still no dedicated "purchases by supplier" aggregate report |
 | 4.21-4.26 | Supplier comparison/analysis | ❌ NOT | unchanged | All missing |
-| 4.27 | **Consignment goods (کالای امانی)** | ✅ FULL (new) | `PurchaseItem.is_consignment`/`consignment_settled_at`; stock increases unconditionally but the item's value is excluded from `purchase.total`/`remaining_amount`/`supplier.balance` until settled via `POST /purchases/items/{id}/settle-consignment`; Reports → "کالاهای امانی" lists all outstanding consignment lines with a settle action; `test_purchase_consignment.py` (5 tests) | Settlement doesn't create a payment obligation with its own due date — it just converts the line into a normal payable amount |
+| 4.27 | ~~Consignment goods (کالای امانی)~~ | ❌ **REMOVED this round** | Was FULL in audits 6-9. The product owner determined the feature had been built incorrectly and asked for it to be removed everywhere, not merely hidden: `PurchaseItem.is_consignment`/`consignment_settled_at` dropped via `20260804_01_remove_consignment.py`, the settle route and the outstanding-consignment report deleted, the Reports tab and the Purchases toggle removed, and `test_purchase_consignment.py` deleted. A repo-wide grep confirms zero references remain in the backend or frontend source | If consignment is ever wanted again it must be re-designed from scratch — nothing was left behind to build on. Deliberate |
 | 4.28 | **Live per-line + whole-invoice profit calculator** *(new)* | ✅ FULL | `Purchases.tsx::computeLineProfit()`/`effectiveCost()` — as cost/sale price are typed for any line (existing product, or one just created via quick-add), profit-per-unit, margin %, and line profit total render live using the shared `calculateMarginPct`/`formatMarginPct`/`getMarginStatus` from `lib/margin.ts` (no parallel formula); a whole-invoice "سود کل این فاکتور" + blended margin % sits next to the existing subtotal/total; purely a client-side display over values already flowing through the form — no new persisted field, no backend change. Verified live: hand-calculated examples matched exactly for both an existing-product line and a brand-new-product line in the same invoice | Zero automated test coverage (no unit tests, no frontend test framework in this repo) — verified only via ad-hoc live Playwright checks, deleted after use |
-| 4.29 | **اشانتیون (free promotional item) support** *(new)* | ✅ FULL | Per-line checkbox; when checked, `effectiveCost()` treats that line's cost as 0 for every purpose (display, invoice total, profit calculator, and the actual submitted `unit_cost`) **without ever clearing the input's real stored value** — unchecking trivially reveals whatever was there before, nothing is lost. Margin resolves cleanly to 100% (the shared formula divides by *sale* price, not cost, so this was never a division-by-zero risk). A distinct orange "اشانتیون" badge marks the line so a 100% margin reads as "this is free," not as a data anomaly. Fixed a related, discovered-in-the-same-pass bug: the pre-existing line-validity filter required `unitCost > 0`, which silently excluded *any* zero-cost line (promotional or not) from ever being submitted at all — now a promotional line is correctly includable | Same as 4.28 — no automated tests, live-verified only |
+| 4.29 | **اشانتیون (free promotional item) support** | ✅ FULL | Per-line checkbox; when checked, `effectiveCost()` treats that line's cost as 0 for every purpose (display, invoice total, profit calculator, and the actual submitted `unit_cost`) **without ever clearing the input's real stored value** — unchecking trivially reveals whatever was there before, nothing is lost. Margin resolves cleanly to 100% (the shared formula divides by *sale* price, not cost, so this was never a division-by-zero risk). A distinct orange "اشانتیون" badge marks the line so a 100% margin reads as "this is free," not as a data anomaly. Fixed a related, discovered-in-the-same-pass bug: the pre-existing line-validity filter required `unitCost > 0`, which silently excluded *any* zero-cost line (promotional or not) from ever being submitted at all — now a promotional line is correctly includable | Same as 4.28 — no automated tests, live-verified only |
 
 > **Also fixed this round, not a new feature**: the whole-invoice "مجموع" (total) and profit summary used to show ۰ تومان for any line where prices were typed but no catalog product had been picked/created yet — exactly the moment a shopkeeper most wants to eyeball a ویزیتور's numbers before committing. A separate display-only line set (independent of the submission-eligibility filter, which still correctly requires a real product) now drives the total/profit figures.
 
@@ -278,9 +313,26 @@ All other Warehouse & Inventory rows (multi-warehouse, stocktaking, FIFO/weighte
 
 All other Customers & Credit rows unchanged.
 
-### 7. EXPENSE MANAGEMENT — unchanged
+### 7. EXPENSE MANAGEMENT — *domain opened this round (was 0/13)*
 
-**Status: ❌ NOT IMPLEMENTED — 0/13 features.**
+| ID | Feature | Status | Evidence | Gap |
+|----|---------|--------|----------|-----|
+| 7.1 | Record a general operating expense | ✅ FULL (new) | `Expense` table + `POST /expenses`; `services/expenses.py::create_expense`; هزینه‌ها page, tab «هزینه‌های عمومی» | — |
+| 7.2 | Expense categories, user-extensible | ✅ FULL (new) | Free-text `Expense.category` + `GET /expenses/categories` feeding a `<datalist>` of distinct existing values. **Deliberately not a FK to `Category`** — that table is product-specific with a globally-unique name, so an expense category would collide with a product category of the same name | Not a managed CRUD list; a typo creates a new "category" silently |
+| 7.3 | Recurring expense flag | 🟡 PARTIAL (new) | `Expense.is_recurring` stored and editable | Purely a label — nothing auto-generates next month's entry from it |
+| 7.4 | Cash vs. bank payment method | ✅ FULL (new) | `ExpensePaymentMethod` (cash/bank), deliberately separate from the sales-side `PaymentMethod` enum, whose CARD/CREDIT/CHECK/LOYALTY values describe a customer tender, not a shop outflow | — |
+| 7.5 | Receipt image on an expense | ✅ FULL (new) | `Expense.receipt_image_url` | URL only — no upload endpoint or storage backend exists anywhere in this app yet, so the shopkeeper must host the image themselves |
+| 7.6 | Payroll — structured payslip | ✅ FULL (new) | `SalaryPayment` with `base_amount`/`bonus_amount`/`deductions_amount`, and `net_amount` always **computed** by `create_salary_payment()`, never a free-standing input — same discipline as `Sale.total` | — |
+| 7.7 | Payroll linked to real system users | ✅ FULL (new) | `SalaryPayment.employee_id` → `users.id`; no parallel "employee" model | — |
+| 7.8 | One payslip per employee per month | ✅ FULL (new) | `UniqueConstraint(employee_id, period_year, period_month)` — a safety addition beyond the spec, since a duplicate payslip would silently double-count in `net_profit()` | — |
+| 7.9 | مساعده (salary advance) | ✅ FULL (new) | `SalaryAdvance` as its own record with history, auto-folded into the next payslip's deductions with `settled_in_payment_id` set — not a hand-typed number in a free-text field | — |
+| 7.10 | Payroll visible only to admin | ✅ FULL (new) | `SALARY_ROLES = admin` on **GET as well as writes** — the app's first surface where even reading is restricted; the هزینه‌ها page omits the tab from the DOM for non-admins rather than hiding it with CSS | — |
+| 7.11 | Net profit (Gross − operating costs) | ✅ FULL (new) | `reports.py::net_profit()` combining the shared margin formula with `total_operating_expenses()`; `GET /reports/net-profit`; surfaced next to gross profit in Reports | — |
+| 7.12 | Automatic tax / social-insurance calculation | ❌ NOT (deliberate) | `deductions_amount` is a plain admin-entered figure | **Intentional product-owner decision (۱۴۰۵/۰۵/۱۲)**: Iranian insurance rates, the minimum wage and the payroll tax ladder change yearly by government decree. Hard-coding them would break annually and could show a legally misleading number. To be revisited as its own version once accurate rates are in hand |
+| 7.13 | Budgets & variance vs. actual | ❌ NOT | — | Missing entirely |
+| 7.14 | Expense approval workflow | ❌ NOT | — | Missing entirely |
+
+> **Known cross-cutting gap, carried deliberately**: cash-method `Expense`/`SalaryPayment` rows are **not** subtracted from `expected_cash` in `services/shifts.py`, exactly like the pre-existing `SupplierPayment` gap. Paying rent or wages in cash mid-shift therefore still produces a phantom "shortage" of precisely that amount. `payment_method` exists on both new tables specifically so all three cash-out sources can be fixed together in one change; a cross-reference comment now sits next to the `expected_cash` formula so the two are not fixed apart. See Section F.
 
 ### 8. REPORTS & DASHBOARD
 
@@ -296,7 +348,7 @@ All other Customers & Credit rows unchanged.
 | 8.9-8.11 | Most/least profitable, least selling | 🟡 PARTIAL (was ❌ NOT) | `top_products(sort_by="profit")` can rank by profit; `CategoryProfitChart.tsx` breaks profit down by category; per-item and per-invoice margin % now shown everywhere via `lib/margin.ts` | No explicit "least profitable" / "least selling" view — only descending sort exists |
 | 8.12 | Dead stock | ✅ FULL (was ❌ NOT) | See 3.16 | — |
 | 8.13 | Low stock | ✅ FULL | unchanged | — |
-| 8.14 | Near-expiry | ❌ NOT | unchanged | Missing |
+| 8.14 | Near-expiry | ✅ FULL (was ❌ NOT) | `reports.py::near_expiry_products(red_days=7, orange_days=30)`; `GET /reports/near-expiry`; dashboard widget beside the low-stock one, a «نزدیک انقضا» report tab, and a click-through to a persisted Products filter showing every expiry-dated product. Only counts products with stock on hand — flagging expiry on something with nothing left to sell is noise. Already-expired is labelled distinctly, not lumped in with "7 days left" | Reads `Product.expiration_date` only. `PurchaseItem.expiry_date` is captured per delivery batch but never aggregated back onto the product, so a batch-level date set during a purchase is invisible here until someone also sets it on the product record |
 | 8.15-8.19 | Receivables, payables, cash, bank, expenses | 🟡 PARTIAL | unchanged | Cash/bank/expenses still missing |
 | 8.20 | Gross/net profit | ❌ NOT | Dashboard/profit_trend is a real number now, but there is still no formal Gross/Net P&L statement | Missing (needs expense tracking, Section 7) |
 | 8.21-8.24 | Charts | ✅ FULL (was 🟡 PARTIAL) | Full chart redesign this session: `SalesChart.tsx`, `ProfitChart.tsx`, `PaymentMethodChart.tsx`, `TopProductsChart.tsx`, `CategoryProfitChart.tsx`, `SalesComparisonChart.tsx` — all backed by real API data, all customizable via `DashboardCustomizePanel.tsx` | — |
@@ -309,6 +361,9 @@ All other Customers & Credit rows unchanged.
 | 8.46 | **Loyalty liability report** *(new)* | ✅ FULL | `GET /reports/loyalty-liability`; Reports → "باشگاه مشتریان" tab; sweeps expired points before reading so the figure is always current | — |
 | 8.47 | **Upcoming-birthdays report** *(new)* | ✅ FULL | `GET /reports/upcoming-birthdays?within_days=`; correctly wraps year-end (Dec→Jan) | No automated reminder — visible list only, matching the low-stock widget's pattern |
 | 8.48 | **Churn-risk customers report** *(new)* | ✅ FULL | `GET /reports/churn-risk`; ≥2 completed sales in the trailing 90 days but none in the last 30 — a real SQL `FILTER` aggregate, not a Python loop | No action button beyond visibility (no auto-coupon, no SMS — see 13.x) |
+| 8.49 | **Net profit report** *(new)* | ✅ FULL | `GET /reports/net-profit`; gross profit from the shared margin formula minus `total_operating_expenses()` (expenses + payroll). Returns the payroll figure only as an aggregate — never per-employee — so the endpoint can stay admin+manager while payslips themselves remain admin-only | Period totals only; no month-over-month trend or breakdown by expense category yet |
+| 8.50 | **Internal inflation-rate report** *(new — beyond the original feature list)* | ✅ FULL | `GET /reports/inflation-rate` returns one composite payload from a single shared grouped query: cost-side and price-side Laspeyres indices, the mirror **volume index** (رکود), a **real-profit index** (price index − cost index, i.e. margin compression), a four-quadrant `diagnose_status()` producing a plain-Persian sentence, revenue impact (nominal vs. deflated growth), a per-category breakdown, and ranked "biggest price rises"/"biggest volume drops" tables. Verified by `test_inflation_rate.py` with the expected index values worked out by hand in comments, plus a live cross-check that the report's nominal revenue equals `daily_sales_summary()` for the same period | Compares exactly two user-chosen periods; no multi-month trend line, and no benchmark against the shop's own historical average (both explicitly deferred in `docs/inflation-rate-report.md`) |
+| 8.51 | **Report glossary** *(new)* | ✅ FULL | A collapsed «راهنمای اصطلاحات» block near the top of the inflation tab explaining each index, the nominal-vs-real revenue distinction (with a worked toman example) and all four diagnosis labels in plain language | Only the inflation report has one |
 | 8.49 | **Internal inflation-rate report** *(planned, designed 6 مرداد)* | ❌ NOT (designed, not started) | Full spec in `docs/inflation-rate-report.md`: matched-basket, quantity-weighted (Laspeyres-style) index comparing cost-side (`PurchaseItem.unit_cost`) vs. price-side (`SaleItem.unit_price`) between two user-chosen periods; explicitly the store's own internal index, not the national/official rate; no new tables needed | Not started — no backend function, no endpoint, no UI tab yet |
 
 > Note: this row was added by referencing the design doc; the domain's weighted
@@ -367,9 +422,11 @@ All other Customers & Credit rows unchanged.
 
 **Status: ❌ NOT IMPLEMENTED — 0/15 features.**
 
-### 12. SUPERMARKET-SPECIFIC — unchanged from the previous audit
+### 12. SUPERMARKET-SPECIFIC — **weakened this round**
 
-Still just consignment goods (کالای امانی) — see 4.27. 2 Full/1 Partial/15 Missing.
+Consignment goods (کالای امانی) was this domain's only Full row and has been removed entirely (see 4.27), so the domain drops to **0 Full / 1 Partial / 17 Missing (~4%)** — now the weakest non-zero domain in the app.
+
+What remains missing here is precisely what distinguishes a supermarket from a general store: **weighted goods and scale integration** (the largest single gap — the quantity columns are already `Numeric(14,3)` and could hold 2.350 kg today, so this is more a POS-input gap than a data-model one; the POS offers only integer +/- buttons), scale-printed barcode parsing, multi-unit and multi-packaging sales, wholesale price tiers, and near-expiry markdown pricing. The near-expiry *visibility* gap closed this round (8.14), but acting on it — discounting a soon-to-expire item at the till — is still entirely manual.
 
 ### 13. MARKETING & LOYALTY *(22 rows now, all Full — was 0/15 entirely Missing before the loyalty build)*
 
@@ -575,6 +632,8 @@ The same 5 failures remain a **pre-existing, unrelated baseline** — all five f
 
 **No P0s remain open.** The next-most-urgent items are now P1.
 
+> **New P1 opened this round (a known, deliberate carry-over, not a surprise):** cash-method `Expense`/`SalaryPayment` rows are not deducted from `expected_cash` at shift close, exactly like the pre-existing `SupplierPayment` gap. Paying rent or wages in cash from the till produces a phantom shortage of precisely that amount. All three sources must be fixed in one change; a cross-reference comment now sits beside the formula so they are not fixed apart. Effort: S.
+
 ### P1 — Required for a Real Supermarket Pilot
 
 | Priority | Gap | Effort | Status |
@@ -586,10 +645,10 @@ The same 5 failures remain a **pre-existing, unrelated baseline** — all five f
 | ~~P1~~ | ~~Sale cancellation with stock reversal~~ | — | **Partially resolved** — held/draft sales can be discarded; completed-sale cancellation still missing |
 | P1 | Thermal/ESC-POS receipt printing | M | Partially resolved — browser print exists, hardware integration doesn't |
 | P1 | Tax support | S | Still open |
-| P1 | Expense tracking | M | Still open |
+| ~~P1~~ | ~~Expense tracking~~ | — | **Resolved this round** — expenses, payroll and salary advances land in three new tables and feed a real `net_profit()`. The single biggest gap this audit has carried since day one |
 | P1 | Customer credit-limit enforcement | XS | Still open — re-confirmed |
 | P1 | Duplicate product line prevention | XS | Still open |
-| P1 | Split/mixed payment for **sales** (POS), not just purchases | S | **Flagged for re-verification, not confirmed by this round's work** — `frontend/src/pages/Sales.tsx` now shows a `SalePaymentMethod`/`PaymentLine` type and a `Wallet` icon import, and `alembic current` on the shared dev DB shows a migration named `20260802_01_sale_payment_lines` that this audit has never covered — both landed on the shared repo from work this round didn't do or review. Marking this row "still open" would now likely be **wrong**, but marking it "resolved" without actually reading that code would be dishonest — leaving it flagged rather than asserting either way |
+| ~~P1~~ | ~~Split/mixed payment for **sales** (POS)~~ | — | **Resolved and verified this round** — the previous audit flagged this as "unverified"; it is now confirmed live. Sale payment lines support cash+card on one invoice with a running remaining-balance hint, card is the default tender, and چک was removed from the customer side entirely (the shop does not accept customer cheques). |
 | ~~P1~~ | ~~Weak token format (custom SHA256, not JWT)~~ | — | **Resolved this round** — real JWT (HS256, `sub`/`iat`/`exp`) via PyJWT; verified externally decodable and confirmed old-format tokens are cleanly rejected |
 
 **Also fixed this round (bugs in already-built features, not new gap-tier items):** a loyalty-points redemption-cap bypass after an invoice edit (see Section F), an N+1 query pattern in two loyalty endpoints, duplicated tier-classification logic across two files, a harmless duplicate line in `sales.py`, and — the most consequential one — the `ProductCombobox` quick-add flow silently discarding the user's just-typed data in three different screens (`Purchases.tsx`, `SaleEditForm.tsx`, `PurchaseEditForm.tsx`), which directly undermined the very use case the new purchase profit calculator was built for (a ویزیتور's brand-new product).
@@ -628,8 +687,28 @@ The same 5 failures remain a **pre-existing, unrelated baseline** — all five f
 |----------|---------|-----------|
 | Developer demo | ✅ Yes | Even stronger than before — real auth, a now feature-complete and *hardened* loyalty program (scoring, redemption with a cap that survives an edit, membership, a product-level override, suggestions, a browsable catalog, tiers with a rolling-window option and a real earn bonus, churn coupons, and two new post-checkout enrollment moments), real charts/margin/shift/check workflows, **and a new live purchase-profit calculator** a shopkeeper can use to judge a supplier's deal before committing to it |
 | Investor demo | 🟢 **Yes, confidently** | Every business endpoint is now role-protected and audit-logged; the login flow is real and demoable end-to-end; no more "don't click that" caveats |
-| Controlled pilot (1 store, multiple cashiers) | 🟡 **Meaningfully closer** | Real login + RBAC + shift management + loyalty now all exist together; blocked by: no tax, no expense tracking, no double-entry accounting |
-| Real financial operations | ❌ No | No double-entry accounting |
+| Controlled pilot (1 store, multiple cashiers) | 🟡 **Closest it has ever been** | Real login + RBAC + shifts + loyalty + **operating costs and payroll feeding a true net-profit figure**. Only one hard blocker left for a pilot: **tax**. Double-entry is not strictly required for a single-till shop; a phantom cash-shortage at shift close (cash paid out to suppliers/rent/wages) would need explaining to the cashier until that one-line-ish fix lands |
+| Real financial operations | ❌ No | No double-entry accounting, and no tax. Net profit is now real but it is a flat expense ledger, not a general ledger — adequate to run a shop, not to file with |
 | Multiple cashiers | 🟢 **Yes, for the till/role-separation part** | Real per-user login now exists — a cashier genuinely only sees/does what their role permits; shift + performance tracking is real |
 | Multi-branch | ❌ No | Single-tenant only, unchanged |
-| Production deployment | 🟡 **Closer, not there** | Auth/RBAC/hashing/token format are all now production-grade in shape; still blocked by no tax/expense/double-entry and no backup strategy |
+| Production deployment | 🟡 **Closer, not there** | Auth/RBAC/hashing/token format are production-grade in shape and expenses are now covered; still blocked by no tax, no double-entry, no backup strategy, and SQLite (`with_for_update()` is a no-op there, so concurrent overselling remains possible) |
+
+
+### چه چیزی واقعاً باقی مانده؟ (خلاصه‌ی این دور)
+
+**۱. تنها مانع باقی‌مانده برای یک پایلوت واقعی:**
+- **مالیات** — هیچ فیلد مالیاتی در کل schema وجود ندارد. حالا که هزینه‌ها بسته شد، این تنها مانع سخت است.
+
+**۲. کوچک ولی مهم (هرکدام کم‌کار، اثر مستقیم روی اعتماد به اعداد):**
+- کسر خروجی نقدی (تامین‌کننده + اجاره + حقوق) از `expected_cash` در بستن شیفت — وگرنه کسری کاذب
+- اعمال `customer.credit_limit` در `process_sale()` (سقف اعتبار هنوز در بک‌اند اجرا نمی‌شود)
+- لغو فاکتور فروش تکمیل‌شده با دلیل (فقط فاکتور معلق قابل حذف است)
+- جلوگیری از خط تکراری یک محصول در یک فاکتور
+
+**۳. آنچه یک سوپرمارکت را از یک مغازه‌ی عمومی جدا می‌کند (دامنه‌ی ۱۲، ضعیف‌ترین):**
+- **کالای وزنی و اتصال ترازو** — بزرگ‌ترین شکاف تک‌قلم. ستون مقدار از قبل `Numeric(14,3)` است، پس این بیشتر یک شکاف ورودی در صندوق است تا مدل داده
+- بارکد ترازویی، چندواحدی/چندبسته‌ای، قیمت عمده، تخفیف خودکار کالای نزدیک انقضا
+
+**۴. دامنه‌های هنوز صفر:** تحلیل هوشمند (۹)، عملیات روزانه (۱۱)، چندشعبه‌ای (۱۴)، سخت‌افزار/چاپ حرارتی (۱۵)، موتورهای هوشمند (۱۷).
+
+**۵. تصمیم بزرگ معلق (خارج از این ممیزی):** چندمستأجری‌سازی برای مدل SaaS — schema هیچ `tenant_id` ندارد و این پیش‌نیاز فروش به چند فروشگاه است.
