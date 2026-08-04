@@ -8,10 +8,14 @@ from app.models.entities import (
     CashierShift,
     CustomerPayment,
     DocumentStatus,
+    Expense,
+    ExpensePaymentMethod,
     PaymentMethod,
+    SalaryPayment,
     Sale,
     SalePaymentLine,
     ShiftStatus,
+    SupplierPayment,
     User,
 )
 
@@ -54,6 +58,11 @@ def close_shift(
     version's documented gap (an immediate cash top-up on an otherwise
     credit sale is now a real, attributable payment line, not something
     silently invisible to this reconciliation).
+
+    Cash paid OUT during the shift is then subtracted: cash SupplierPayment
+    rows, cash Expense rows and cash SalaryPayment rows. Card, bank and
+    card-to-card movements are all deliberately ignored on both sides —
+    none of them passes through the drawer.
     """
     if shift.status != ShiftStatus.OPEN:
         raise ShiftError("Shift is already closed")
@@ -87,15 +96,53 @@ def close_shift(
         )
     ) or Decimal("0")
 
-    # KNOWN GAP: this never subtracts cash paid OUT of the till — not
-    # SupplierPayment, and now not cash-method Expense/SalaryPayment either
-    # (see docs/expense-management.md "ارتباط با تسویه‌ی صندوق"). A manager
-    # paying rent/payroll/a supplier in cash mid-shift produces a false
-    # "shortage" here of exactly that amount. Not fixed in this pass —
-    # Expense/SalaryPayment.payment_method exists specifically so that when
-    # this formula is corrected, all three cash-out sources can be
-    # subtracted together in one fix rather than being patched separately.
-    expected_cash = shift.opening_cash + cash_sales_total + cash_customer_payments
+    # Cash paid OUT of the till during the shift. Until this was added, a
+    # manager settling a supplier, the rent or a wage in cash mid-shift
+    # produced a "shortage" of exactly that amount at close — the money was
+    # genuinely gone from the drawer, but the expected figure still assumed
+    # it was there. That is the single most alarming number this app can
+    # show a shopkeeper, and it was routine, not an edge case.
+    #
+    # All three sources are matched on a real timestamp, not on a calendar
+    # date. Expense carries a business `date` (day granularity), but two
+    # shifts can run in one day and a day-based match would then deduct the
+    # same expense from both, turning one phantom shortage into a phantom
+    # overage. `created_at` is when the row was actually entered, which is
+    # the moment the cash left the drawer for a shopkeeper recording as they
+    # go. The trade-off: an expense back-dated days later is attributed to
+    # the shift it was *entered* in. That is visible and correctable;
+    # silently double-counting would not be.
+    cash_out_conditions = lambda column: (  # noqa: E731 - local shorthand
+        func.datetime(column) >= func.datetime(shift.opened_at),
+        func.datetime(column) <= func.datetime(closed_at),
+    )
+
+    cash_supplier_payments = database.scalar(
+        select(func.coalesce(func.sum(SupplierPayment.amount), 0)).where(
+            SupplierPayment.method == PaymentMethod.CASH,
+            *cash_out_conditions(SupplierPayment.paid_at),
+        )
+    ) or Decimal("0")
+
+    cash_expenses = database.scalar(
+        select(func.coalesce(func.sum(Expense.amount), 0)).where(
+            Expense.payment_method == ExpensePaymentMethod.CASH,
+            *cash_out_conditions(Expense.created_at),
+        )
+    ) or Decimal("0")
+
+    cash_salaries = database.scalar(
+        select(func.coalesce(func.sum(SalaryPayment.net_amount), 0)).where(
+            SalaryPayment.payment_method == ExpensePaymentMethod.CASH,
+            *cash_out_conditions(SalaryPayment.paid_at),
+        )
+    ) or Decimal("0")
+
+    cash_out_total = cash_supplier_payments + cash_expenses + cash_salaries
+
+    expected_cash = (
+        shift.opening_cash + cash_sales_total + cash_customer_payments - cash_out_total
+    )
 
     shift.closing_cash = closing_cash
     shift.expected_cash = expected_cash
