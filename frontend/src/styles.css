@@ -1370,6 +1370,43 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
 .muted-text { color: var(--muted); }
 .report-date-cell { direction: ltr; justify-self: start; }
 
+/* ===== Shared period selector (Reports + Expenses) ===== */
+.period-selector {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+.period-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.period-presets .price-tier-button {
+  padding: 7px 14px;
+  font-size: 12px;
+  width: auto;
+}
+.period-range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.period-range .jalali-datepicker-container { min-width: 150px; }
+.period-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.expense-summary-note {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 10px 0 0;
+}
+
 .inflation-glossary {
   margin-top: 12px;
   border: 1px solid var(--line);

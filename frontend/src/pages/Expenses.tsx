@@ -16,6 +16,7 @@ import {
 } from "../api";
 import { JalaliDatePicker } from "../components/JalaliDatePicker";
 import { Modal } from "../components/Modal";
+import { PeriodLabel, PeriodSelector, defaultPeriod, type Period } from "../components/PeriodSelector";
 import { useI18n } from "../i18n";
 import { canViewSalaries } from "../permissions";
 import { getSession } from "../session";
@@ -432,6 +433,7 @@ export function Expenses() {
   const canSeeSalaryTab = canViewSalaries(role);
 
   const [tab, setTab] = useState<ExpenseTab>("general");
+  const [period, setPeriod] = useState<Period>(() => defaultPeriod());
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -448,7 +450,10 @@ export function Expenses() {
   const loadExpenses = useCallback(async () => {
     setExpensesLoading(true);
     try {
-      const [expenseRows, categoryRows] = await Promise.all([getExpenses(), getExpenseCategories()]);
+      const [expenseRows, categoryRows] = await Promise.all([
+        getExpenses({ fromDate: period.start, toDate: period.end }),
+        getExpenseCategories(),
+      ]);
       setExpenses(expenseRows);
       setCategories(categoryRows);
     } catch {
@@ -456,7 +461,26 @@ export function Expenses() {
     } finally {
       setExpensesLoading(false);
     }
-  }, []);
+  }, [period.start, period.end]);
+
+  const expenseTotal = useMemo(
+    () => expenses.reduce((sum, row) => sum + Number(row.amount), 0),
+    [expenses],
+  );
+
+  const expensesByCategory = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const row of expenses) {
+      totals.set(row.category, (totals.get(row.category) ?? 0) + Number(row.amount));
+    }
+    return [...totals.entries()]
+      .map(([category, total]) => ({
+        category,
+        total,
+        share: expenseTotal > 0 ? (total / expenseTotal) * 100 : 0,
+      }))
+      .sort((a, b) => b.total - a.total);
+  }, [expenses, expenseTotal]);
 
   useEffect(() => {
     loadExpenses();
@@ -527,6 +551,52 @@ export function Expenses() {
             </button>
           </div>
 
+          <PeriodLabel period={period} />
+          <PeriodSelector value={period} onChange={setPeriod} />
+
+          {!expensesLoading && (
+            <>
+              <section className="metric-grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", marginTop: 16 }}>
+                <article className="metric-card">
+                  <p>{t("expenseTotalInPeriod")}</p>
+                  <strong>{money(expenseTotal)}</strong>
+                </article>
+                <article className="metric-card">
+                  <p>{t("expenseCountInPeriod")}</p>
+                  <strong>{number(expenses.length)}</strong>
+                </article>
+              </section>
+
+              {/* A single lump sum tells a shopkeeper almost nothing; the
+                  split is what they can act on -- rent is fixed, but a
+                  spike in متفرقه or تعمیرات is a question worth asking. */}
+              {expensesByCategory.length > 0 && (
+                <>
+                  <div className="panel-heading" style={{ marginTop: 20 }}>
+                    <h2>{t("expenseByCategory")}</h2>
+                  </div>
+                  <div className="report-table report-table-wrap">
+                    <div className="report-table-row report-cols-3 report-head">
+                      <span className="report-header-cell">{t("expenseCategory")}</span>
+                      <span className="report-header-cell">{t("expenseAmount")}</span>
+                      <span className="report-header-cell" />
+                    </div>
+                    {expensesByCategory.map(({ category, total, share }) => (
+                      <div className="report-table-row report-cols-3 animated-line" key={category}>
+                        <strong>{category}</strong>
+                        <span>{money(total)}</span>
+                        <span className="muted-text">{number(Math.round(share))}٪</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+
+          <div className="panel-heading" style={{ marginTop: 20 }}>
+            <h2>{t("generalExpensesTab")}</h2>
+          </div>
           <div className="report-table">
             <div className="report-table-row report-cols-5 report-head">
               <span className="report-header-cell">{t("expenseCategory")}</span>

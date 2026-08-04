@@ -31,6 +31,7 @@ import {
   request,
 } from "../api";
 import { JalaliDatePicker } from "../components/JalaliDatePicker";
+import { PeriodLabel, PeriodSelector, defaultPeriod, type Period } from "../components/PeriodSelector";
 import { SaleDetailView } from "../components/SaleDetailView";
 import type { Page } from "../components/Sidebar";
 import { useI18n } from "../i18n";
@@ -201,6 +202,7 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
   const { money, number, t, language } = useI18n();
 
   const [tab, setTab] = useState<ReportTab>("sales");
+  const [salesPeriod, setSalesPeriod] = useState<Period>(() => defaultPeriod());
   const [dailySales, setDailySales] = useState<DailySalesRow[]>([]);
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
   const [lowStock, setLowStock] = useState<LowStockItem[]>([]);
@@ -234,7 +236,9 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
         customerBalances,
         supplierBalances,
       ] = await Promise.all([
-        request<DailySalesRow[]>(`${base}/daily-sales`),
+        request<DailySalesRow[]>(
+          `${base}/daily-sales?from_date=${salesPeriod.start}&to_date=${salesPeriod.end}`,
+        ),
         request<TopProduct[]>(`${base}/top-products`),
         request<LowStockItem[]>(`${base}/low-stock`),
         request<InvItem[]>(`${base}/inventory`),
@@ -253,30 +257,25 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, salesPeriod.start, salesPeriod.end]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // "سود خالص" next to the existing gross-profit figure (doc:
-  // docs/expense-management.md) — same admin+manager gate as the backend
-  // route, and the same implicit 30-day range daily-sales already shows
-  // (no new date picker introduced just for this one summary).
+  // Gross profit, operating expenses and net profit must always describe the
+  // SAME days as the daily-sales table under them, or the net figure is
+  // arithmetic nonsense. One piece of state drives all four, so they cannot
+  // drift apart.
   const canSeeNetProfit = canManageExpenses(getSession()?.role ?? "");
   const [netProfitReport, setNetProfitReport] = useState<NetProfitReport | null>(null);
 
   useEffect(() => {
     if (!canSeeNetProfit) return;
-    const today = new Date();
-    const periodEnd = today.toISOString().slice(0, 10);
-    const from = new Date(today);
-    from.setDate(from.getDate() - 30);
-    const periodStart = from.toISOString().slice(0, 10);
-    getNetProfit({ periodStart, periodEnd })
+    getNetProfit({ periodStart: salesPeriod.start, periodEnd: salesPeriod.end })
       .then(setNetProfitReport)
       .catch(() => setNetProfitReport(null));
-  }, [canSeeNetProfit]);
+  }, [canSeeNetProfit, salesPeriod.start, salesPeriod.end]);
 
   const loadInvoiceList = useCallback(async () => {
     setInvoiceListLoading(true);
@@ -453,8 +452,10 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
         <section className="panel report-table-wrap">
           <div className="panel-heading">
             <h2>{t("sales")}</h2>
-            <span className="subtle-chip">{t("salesTrend")}</span>
+            <PeriodLabel period={salesPeriod} />
           </div>
+
+          <PeriodSelector value={salesPeriod} onChange={setSalesPeriod} />
 
           {canSeeNetProfit && netProfitReport && (
             <section className="metric-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))", marginBottom: 16 }}>
