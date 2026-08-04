@@ -1040,9 +1040,11 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
 
 .date-range-filter { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 
+/* 12 columns: cashier, invoices, total, average, discount, cash, card,
+   card-to-card, credit, edited, held, discarded. */
 .report-table-row.cashier-perf-columns {
-  grid-template-columns: minmax(140px, 1.3fr) minmax(90px, .6fr) minmax(120px, .9fr) minmax(110px, .8fr) minmax(100px, .7fr) minmax(90px, .6fr) minmax(90px, .6fr) minmax(90px, .6fr) minmax(80px, .55fr) minmax(80px, .55fr) minmax(90px, .6fr);
-  min-width: 1180px;
+  grid-template-columns: minmax(140px, 1.3fr) minmax(90px, .6fr) minmax(120px, .9fr) minmax(110px, .8fr) minmax(100px, .7fr) minmax(90px, .6fr) minmax(90px, .6fr) minmax(110px, .7fr) minmax(90px, .6fr) minmax(80px, .55fr) minmax(80px, .55fr) minmax(90px, .6fr);
+  min-width: 1300px;
 }
 
 .report-table-row.shift-history-columns {

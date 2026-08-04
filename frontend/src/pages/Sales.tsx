@@ -1006,6 +1006,13 @@ export function Sales() {
                   >
                     {t("card")}
                   </button>
+                  <button
+                    type="button"
+                    className={`price-tier-button ${line.method === "card_to_card" ? "price-tier-selected" : ""}`}
+                    onClick={() => updatePaymentLine(line.key, { method: "card_to_card" })}
+                  >
+                    {t("cardToCard")}
+                  </button>
                 </div>
                 <input
                   type="number"

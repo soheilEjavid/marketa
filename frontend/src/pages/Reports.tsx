@@ -1169,6 +1169,12 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
                 <span className="report-header-cell">{t("discount")}</span>
                 <span className="report-header-cell">{t("cash")}</span>
                 <span className="report-header-cell">{t("card")}</span>
+                {/* The reason this column exists: money transferred straight
+                    to the owner's card never passes through the till or the
+                    POS terminal, so the only way to catch a cashier who gave
+                    out their own card number is to total it per cashier and
+                    compare against what actually arrived in the bank. */}
+                <span className="report-header-cell">{t("cardToCard")}</span>
                 <span className="report-header-cell">{t("credit")}</span>
                 <span className="report-header-cell">{t("editedCount")}</span>
                 <span className="report-header-cell">{t("heldCount")}</span>
@@ -1186,6 +1192,9 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
                     <span className="muted-text">{renderMoney(Number(row.total_discount))}</span>
                     <span className="muted-text">{renderMoney(Number(row.payment_method_breakdown.cash ?? 0))}</span>
                     <span className="muted-text">{renderMoney(Number(row.payment_method_breakdown.card ?? 0))}</span>
+                    <span className="muted-text">
+                      {renderMoney(Number(row.payment_method_breakdown.card_to_card ?? 0))}
+                    </span>
                     <span className="muted-text">{renderMoney(Number(row.payment_method_breakdown.credit ?? 0))}</span>
                     <span className="muted-text">{number(row.edited_count)}</span>
                     <span className="muted-text">{number(row.held_count)}</span>

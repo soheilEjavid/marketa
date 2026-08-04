@@ -23,6 +23,15 @@ from app.models.base import Base, TimestampMixin
 class PaymentMethod(StrEnum):
     CASH = "cash"
     CARD = "card"
+    # کارت به کارت — the customer transfers straight to the shop owner's card
+    # from their phone; no POS terminal is involved. Tracked separately from
+    # CARD on purpose: it is an anti-theft control, not a cosmetic label. An
+    # employee can tell a customer to transfer to *their own* card number and
+    # the sale still looks paid, so the owner needs a per-shift total to
+    # reconcile against what actually landed in their bank account. It never
+    # enters the till, so close_shift() must keep excluding it from expected
+    # cash (it already does — that query filters on CASH).
+    CARD_TO_CARD = "card_to_card"
     CREDIT = "credit"
     MIXED = "mixed"
     CHECK = "check"

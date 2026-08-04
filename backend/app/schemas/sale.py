@@ -33,7 +33,12 @@ class SalePaymentLineInput(BaseModel):
     services/checks.py) and must not be touched.
     """
 
-    method: Literal["cash", "card"]
+    # card_to_card (کارت به کارت) is a genuinely different tender from card,
+    # not a label: it never reaches the till or the POS terminal, it lands
+    # directly in the owner's bank account, and it is tracked separately so
+    # the owner can reconcile a shift's total against what actually arrived
+    # there. See PaymentMethod.CARD_TO_CARD.
+    method: Literal["cash", "card", "card_to_card"]
     amount: Decimal = Field(gt=0)
     check_number: str | None = Field(default=None, max_length=60)
     check_bank_name: str | None = Field(default=None, max_length=120)
