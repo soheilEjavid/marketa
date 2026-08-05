@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { Bar, BarChart, Cell, LabelList, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { getTopProducts } from "../api";
 import { useI18n } from "../i18n";
 import type { TopProductRow } from "../types";
@@ -11,8 +10,25 @@ type TopProductsChartProps = {
   enabled: boolean;
 };
 
-const BAR_COLORS = ["#f97316", "#fb923c", "#fdba74", "#fed7aa", "#ffedd5"];
-
+/**
+ * A ranked bar list rather than a plotted bar chart.
+ *
+ * The previous version used a recharts horizontal BarChart, which had two
+ * problems this form removes outright:
+ *
+ *  - recharts lays out its category axis left-to-right regardless of the
+ *    document's RTL direction, so Persian product names rendered *on top of*
+ *    the bars they labelled.
+ *  - each bar took a different step of orange. Products are nominal
+ *    categories with no inherent order, so a lightness ramp across them
+ *    re-encodes bar length as hue: it spends the only free visual channel
+ *    restating what length already says, and the five steps are barely
+ *    distinguishable from one another anyway. One series gets one colour.
+ *
+ * Giving the name its own line and the bar its own line means nothing can
+ * collide at any name length, and the rank numeral carries identity without
+ * relying on colour at all.
+ */
 export function TopProductsChart({ enabled }: TopProductsChartProps) {
   const { t, money, number } = useI18n();
   const [metric, setMetric] = useState<Metric>("quantity");
@@ -30,11 +46,13 @@ export function TopProductsChart({ enabled }: TopProductsChartProps) {
 
   if (!enabled) return null;
 
-  const chartData = (rows ?? []).map((row) => ({
+  const items = (rows ?? []).map((row) => ({
     name: row.product_name,
     value: metric === "quantity" ? Number(row.total_quantity) : Number(row.total_profit),
   }));
-
+  // Share of the leader, so the top row always fills the track and the rest
+  // read as a proportion of it — the comparison a "top products" list is for.
+  const leader = items.length > 0 ? Math.max(...items.map((i) => i.value), 0) : 0;
   const formatValue = (value: number) => (metric === "quantity" ? number(value) : money(value));
 
   return (
@@ -58,47 +76,30 @@ export function TopProductsChart({ enabled }: TopProductsChartProps) {
 
       {loading || rows === null ? (
         <div className="empty-state compact">{t("loading")}</div>
-      ) : chartData.length === 0 ? (
+      ) : items.length === 0 ? (
         <div className="empty-state compact">{t("noData")}</div>
       ) : (
-        <ResponsiveContainer width="100%" height={240}>
-          <BarChart data={chartData} layout="vertical" margin={{ top: 4, right: 48, left: 4, bottom: 4 }}>
-            <XAxis type="number" hide />
-            <YAxis
-              type="category"
-              dataKey="name"
-              width={120}
-              tick={{ fontSize: 11, fill: "#8a766a" }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <Tooltip
-              formatter={(value) => formatValue(Number(value))}
-              cursor={{ fill: "rgba(249, 115, 22, .06)" }}
-              contentStyle={{
-                borderRadius: 12,
-                border: "1px solid #f1ded2",
-                fontSize: 12,
-                boxShadow: "0 12px 28px rgba(179, 83, 20, .14)",
-                padding: "8px 12px",
-              }}
-            />
-            <Bar dataKey="value" radius={[0, 10, 10, 0]} barSize={20} isAnimationActive animationDuration={600}>
-              {chartData.map((entry, index) => (
-                <Cell key={entry.name} fill={BAR_COLORS[index] ?? BAR_COLORS[BAR_COLORS.length - 1]} />
-              ))}
-              <LabelList
-                dataKey="value"
-                position="right"
-                formatter={(value: unknown) => {
-                  const numeric = Number(value);
-                  return Number.isFinite(numeric) ? formatValue(numeric) : "";
-                }}
-                style={{ fill: "#c94f05", fontSize: 11, fontWeight: 700 }}
-              />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <ol className="rank-list">
+          {items.map((item, index) => (
+            <li className="rank-row" key={item.name}>
+              <span className="rank-badge">{number(index + 1)}</span>
+              <div className="rank-body">
+                <div className="rank-line">
+                  <span className="rank-name" title={item.name}>
+                    {item.name}
+                  </span>
+                  <strong className="rank-value">{formatValue(item.value)}</strong>
+                </div>
+                <div className="rank-track">
+                  <div
+                    className="rank-fill"
+                    style={{ width: `${leader > 0 ? Math.max((item.value / leader) * 100, 1.5) : 0}%` }}
+                  />
+                </div>
+              </div>
+            </li>
+          ))}
+        </ol>
       )}
     </div>
   );
