@@ -76,10 +76,14 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 }
 [dir="rtl"] .app-shell { grid-template-columns: minmax(0, 1fr) var(--sidebar-width); }
 
+/* The sidebar was flat #ffffff against a #fff8f3 page, so the two planes
+   read as one surface with a hairline drawn on it. Tinting it and letting
+   the ACTIVE item be the white card inverts that: the rail recedes, and the
+   thing you're looking at is the one that lifts off it. */
 .sidebar {
-  background: #ffffff;
+  background: linear-gradient(180deg, #fffcf9 0%, #fff6ef 100%);
   color: var(--ink);
-  padding: 28px 20px 22px;
+  padding: 26px 16px 20px;
   display: flex;
   flex-direction: column;
   position: sticky;
@@ -87,25 +91,35 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   height: 100vh;
   grid-column: 1;
   grid-row: 1;
-  border-inline-end: 1px solid var(--line);
+  border-inline-end: 1px solid #f6e7db;
   z-index: 3;
 }
 [dir="rtl"] .sidebar { grid-column: 2; }
 
-.brand { display: flex; align-items: center; gap: 12px; padding: 0 7px 30px; }
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 8px 22px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid #f6e7db;
+}
 .brand-mark {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
   display: grid;
   place-items: center;
-  background: var(--orange);
+  /* A little depth on the one element that carries the brand, rather than a
+     flat block of the accent colour. */
+  background: linear-gradient(145deg, #fb923c 0%, var(--orange) 55%, var(--orange-dark) 100%);
   color: white;
   font-weight: 800;
   font-size: 18px;
-  box-shadow: 0 8px 20px rgba(249, 115, 22, .24);
+  box-shadow: 0 6px 16px rgba(249, 115, 22, .3), inset 0 1px 0 rgba(255, 255, 255, .35);
+  flex-shrink: 0;
 }
-.brand strong { font-size: 16px; letter-spacing: .04em; display: block; }
+.brand strong { font-size: 15px; letter-spacing: .04em; display: block; line-height: 1.35; }
 [dir="rtl"] .brand strong { letter-spacing: 0; }
 .brand small, .sidebar-footer small { color: var(--muted); font-size: 11px; }
 .nav-wrap {
@@ -133,10 +147,12 @@ nav {
 }
 .nav-group { display: grid; gap: 3px; }
 .nav-group-label {
-  padding: 0 14px 2px;
-  font-size: 11px;
-  font-weight: 800;
-  color: var(--muted);
+  padding: 0 14px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  /* Lighter than the nav items themselves: a section label is scaffolding,
+     not a destination, and at the old weight it competed with them. */
+  color: #b09b8d;
   text-transform: uppercase;
   letter-spacing: .07em;
 }
@@ -147,61 +163,124 @@ nav {
   right: 0;
   bottom: 0;
   height: 30px;
-  background: linear-gradient(to bottom, rgba(255, 255, 255, 0), #ffffff);
+  /* Fades into the rail's own tint, not white — the sidebar is no longer a
+     white surface, and a white fade would read as a band across it. */
+  background: linear-gradient(to bottom, rgba(255, 246, 239, 0), #fff6ef);
   pointer-events: none;
   opacity: 0;
   transition: opacity .2s ease;
 }
 .nav-scroll-fade.visible { opacity: 1; }
 .nav-item {
+  position: relative;
   border: 0;
   background: transparent;
   color: #7f6e64;
   display: flex;
-  gap: 13px;
+  gap: 12px;
   align-items: center;
-  padding: 10px 14px;
-  border-radius: 11px;
+  padding: 10px 13px;
+  border-radius: 12px;
   text-align: start;
-  transition: color .2s ease, background .2s ease, transform .2s ease;
+  font-size: 13.5px;
+  font-weight: 600;
+  transition: color .18s ease, background .18s ease, box-shadow .18s ease;
 }
-.nav-item:hover { transform: translateX(3px); }
-[dir="rtl"] .nav-item:hover { transform: translateX(-3px); }
-.nav-item:hover, .nav-item.active { background: var(--orange-light); color: var(--orange-dark); }
-.nav-item.active { box-shadow: inset 3px 0 var(--orange); }
-[dir="rtl"] .nav-item.active { box-shadow: inset -3px 0 var(--orange); }
+/* Hover is a wash on the tinted rail — no transform. Sliding every row
+   sideways on hover made the whole list feel unsteady on a nav you pass
+   over constantly. */
+.nav-item:hover:not(.active) {
+  background: rgba(255, 255, 255, .72);
+  color: var(--orange-dark);
+}
+/* The active item is the one white card on a tinted rail: it lifts instead
+   of merely tinting, so the current page is obvious at a glance rather than
+   being one more orange block among the hover states. */
+.nav-item.active {
+  background: #ffffff;
+  color: var(--orange-dark);
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(179, 83, 20, .07), 0 8px 20px rgba(179, 83, 20, .07);
+}
+/* A short accent bar rather than a full-height inset edge — reads as a
+   marker, not as a border on the card. */
+.nav-item.active::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: 50%;
+  width: 3px;
+  height: 18px;
+  border-radius: 0 3px 3px 0;
+  background: var(--orange);
+  transform: translateY(-50%);
+}
+[dir="rtl"] .nav-item.active::before { border-radius: 3px 0 0 3px; }
+.nav-item svg { flex-shrink: 0; opacity: .85; transition: opacity .18s ease; }
+.nav-item.active svg { opacity: 1; }
 
 .sidebar-footer {
   margin-top: auto;
-  border-top: 1px solid var(--line);
-  padding: 18px 8px 0;
+  border-top: 1px solid #f6e7db;
+  padding: 16px 4px 0;
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
-.system-status { display: flex; gap: 10px; align-items: center; }
+.system-status {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 11px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .66);
+}
 .system-status strong { display: block; font-size: 12px; }
+/* "Online" is a live state, so it gets a slow halo rather than a static
+   dot — the one animated thing in the rail, and only because it reports
+   something that can actually change. */
 .status-dot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--orange);
-  box-shadow: 0 0 0 4px var(--orange-light);
+  flex-shrink: 0;
+  background: var(--success);
+  box-shadow: 0 0 0 3px var(--success-soft);
+  animation: status-pulse 2.6s ease-in-out infinite;
+}
+@keyframes status-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px var(--success-soft); }
+  50% { box-shadow: 0 0 0 5px rgba(21, 128, 61, .1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-dot { animation: none; }
 }
 .language-button {
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--orange-dark);
-  border-radius: 10px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, .66);
+  color: #7f6e64;
+  border-radius: 11px;
   padding: 9px 12px;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  font-weight: 700;
+  font-weight: 600;
   font-size: 12px;
-  transition: transform .2s ease, border-color .2s ease;
+  transition: background .18s ease, border-color .18s ease, color .18s ease;
 }
-.language-button:hover { transform: translateY(-2px); border-color: var(--orange); }
+.language-button:hover {
+  background: #ffffff;
+  border-color: #f0dccd;
+  color: var(--orange-dark);
+}
+/* Logging out is the one destructive action in here; it should not look
+   identical to switching language. Muted until hovered, so it warns without
+   shouting on every screen. */
+.language-button.is-logout:hover {
+  color: var(--danger);
+  border-color: #f6cfcf;
+  background: var(--danger-soft);
+}
 
 .sidebar-toggle {
   position: absolute;

@@ -238,7 +238,7 @@ export function Sidebar({ activePage, onNavigate, session, onLogout }: SidebarPr
           <span className="nav-item-label">{t("switchLanguage")}</span>
         </button>
         <button
-          className="language-button"
+          className="language-button is-logout"
           onClick={onLogout}
           onMouseEnter={(event) => showTooltip(event, t("logout"))}
           onMouseLeave={hideTooltip}
