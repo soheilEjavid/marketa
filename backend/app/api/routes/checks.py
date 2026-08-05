@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.dependencies import DatabaseSession
 from app.models.entities import CheckStatus, User as UserModel
@@ -19,9 +19,10 @@ async def list_checks(
     status: CheckStatus | None = None,
     sort: str = "due_asc",
     search: str | None = None,
+    limit: int = Query(default=200, ge=1, le=1000),
     _: UserModel = Depends(require_role(*READ_ROLES)),
 ):
-    checks = check_service.list_checks(database, status=status, sort=sort, search=search)
+    checks = check_service.list_checks(database, status=status, sort=sort, search=search, limit=limit)
     return [check_service.to_check_read(check) for check in checks]
 
 

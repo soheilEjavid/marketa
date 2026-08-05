@@ -156,12 +156,16 @@ def close_shift(
     return shift
 
 
-def list_shifts(database: Session) -> list[CashierShift]:
+def list_shifts(database: Session, *, limit: int = 200) -> list[CashierShift]:
+    # One shift a day means this list grows by ~365 rows a year forever,
+    # and it was previously returned whole. Newest-first, so the default
+    # window is the recent history anyone actually opens this page for.
     return list(
         database.scalars(
             select(CashierShift)
             .options(selectinload(CashierShift.cashier))
             .order_by(CashierShift.opened_at.desc())
+            .limit(limit)
         )
     )
 

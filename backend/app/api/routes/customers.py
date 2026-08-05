@@ -195,15 +195,20 @@ async def get_customer_reward_suggestions(
 async def get_customer_loyalty_transactions(
     customer_id: int,
     database: DatabaseSession,
+    limit: int = Query(default=200, ge=1, le=1000),
     _: UserModel = Depends(require_role("admin", "cashier", "manager", "accountant")),
 ):
     customer = customer_service.get_customer(database, customer_id)
     if customer is None:
         raise HTTPException(status_code=404, detail="Customer not found")
+    # A regular customer earns a row per purchase, so a year of shopping is
+    # already several hundred here and it only grows. Newest-first, so the
+    # default window is the recent activity the detail page opens with.
     rows = database.scalars(
         select(LoyaltyPointTransaction)
         .where(LoyaltyPointTransaction.customer_id == customer_id)
         .order_by(LoyaltyPointTransaction.created_at.desc())
+        .limit(limit)
     ).all()
     return rows
 

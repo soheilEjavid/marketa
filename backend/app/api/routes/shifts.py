@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Query, HTTPException, status
 
 from app.api.dependencies import DatabaseSession
 from app.models.entities import User as UserModel
@@ -47,9 +47,10 @@ async def open_shift(
 @router.get("", response_model=list[ShiftRead])
 async def list_shifts(
     database: DatabaseSession,
+    limit: int = Query(default=200, ge=1, le=1000),
     _: UserModel = Depends(require_role(*READ_ROLES)),
 ):
-    return [shift_service.to_shift_read(shift) for shift in shift_service.list_shifts(database)]
+    return [shift_service.to_shift_read(shift) for shift in shift_service.list_shifts(database, limit=limit)]
 
 
 @router.post("/{shift_id}/close", response_model=ShiftRead)

@@ -25,6 +25,7 @@ def list_checks(
     status: CheckStatus | None = None,
     sort: str = "due_asc",
     search: str | None = None,
+    limit: int = 200,
 ) -> list[SupplierPayment]:
     query = _base_query()
     if status is not None:
@@ -42,7 +43,12 @@ def list_checks(
     else:
         query = query.order_by(SupplierPayment.check_due_date.asc().nulls_last())
 
-    return list(database.scalars(query))
+    # Bounded because this list only ever grows: a shop writing a few
+    # cheques a week accumulates thousands over a few years, and both the
+    # payload and the rendered table grew linearly with no ceiling. The
+    # default is generous enough that a real shop sees everything it cares
+    # about, and the status filter above narrows it further.
+    return list(database.scalars(query.limit(limit)))
 
 
 def get_check(database: Session, check_id: int) -> SupplierPayment | None:
