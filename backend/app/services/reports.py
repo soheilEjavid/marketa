@@ -27,6 +27,7 @@ def daily_sales_summary(
             Sale.id.label("sale_id"),
             func.date(Sale.created_at).label("sale_date"),
             Sale.total,
+            Sale.discount,
         )
         .where(
             Sale.status == DocumentStatus.COMPLETED,
@@ -41,6 +42,9 @@ def daily_sales_summary(
             sale_rows.c.sale_date.label("sale_date"),
             func.coalesce(func.sum(sale_rows.c.total), 0).label("total_sales"),
             func.count(sale_rows.c.sale_id).label("transaction_count"),
+            # Summed here, not in profit_summary below: that one joins
+            # SaleItem, so a per-sale figure would be counted once per line.
+            func.coalesce(func.sum(sale_rows.c.discount), 0).label("total_discount"),
         )
         .group_by(sale_rows.c.sale_date)
         .subquery()
@@ -64,7 +68,16 @@ def daily_sales_summary(
             sales_summary.c.sale_date,
             sales_summary.c.total_sales,
             sales_summary.c.transaction_count,
-            func.coalesce(profit_summary.c.profit, Decimal("0")).label("profit"),
+            # SaleItem.line_total already nets off any per-item discount, but
+            # the invoice-level discount lives on Sale and was never taken
+            # off. Revenue (SUM of Sale.total) *does* subtract it, so profit
+            # came out higher than revenue minus cost — a shop giving a
+            # whole-invoice discount saw a profit it had not actually made,
+            # and net_profit() inherited the error through this column.
+            (
+                func.coalesce(profit_summary.c.profit, Decimal("0"))
+                - sales_summary.c.total_discount
+            ).label("profit"),
         )
         .outerjoin(
             profit_summary,
