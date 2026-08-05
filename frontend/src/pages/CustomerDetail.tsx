@@ -23,6 +23,12 @@ type CustomerDetailProps = {
   onBack: () => void;
 };
 
+// Enough rows to answer "did my last few purchases/points land?" without
+// turning the page into an endless scroll. Both lists are already sorted
+// newest-first by the backend, so the preview is the recent activity.
+const POINTS_PREVIEW = 10;
+const LEDGER_PREVIEW = 20;
+
 export function CustomerDetail({ customerId, customerName, onBack }: CustomerDetailProps) {
   const { locale, money, number, t } = useI18n();
   const [ledger, setLedger] = useState<CustomerLedger | null>(null);
@@ -33,6 +39,14 @@ export function CustomerDetail({ customerId, customerName, onBack }: CustomerDet
   const [loyaltyHistory, setLoyaltyHistory] = useState<LoyaltyTransaction[]>([]);
   const [rewardSuggestions, setRewardSuggestions] = useState<LoyaltyRewardSuggestion[]>([]);
   const [showAllSuggestions, setShowAllSuggestions] = useState(false);
+  // A regular customer accumulates a points entry per purchase and two
+  // ledger rows per sale, so after a year of trading this page was
+  // rendering well over a thousand rows at once — the newest activity, the
+  // only reason anyone opens this page, sat at the top of an endless
+  // scroll. Same collapse pattern the reward-suggestion list above already
+  // uses, so nothing new was invented for it.
+  const [showAllPoints, setShowAllPoints] = useState(false);
+  const [showAllLedger, setShowAllLedger] = useState(false);
   const [showAdjustForm, setShowAdjustForm] = useState(false);
   const [adjustDelta, setAdjustDelta] = useState("");
   const [adjustReason, setAdjustReason] = useState("");
@@ -350,7 +364,7 @@ export function CustomerDetail({ customerId, customerName, onBack }: CustomerDet
                   <span className="report-header-cell">{t("loyaltyPoints")}</span>
                   <span className="report-header-cell">{t("adjustPointsReason")}</span>
                 </div>
-                {loyaltyHistory.map((entry) => (
+                {(showAllPoints ? loyaltyHistory : loyaltyHistory.slice(0, POINTS_PREVIEW)).map((entry) => (
                   <div className="report-table-row report-cols-4 animated-line" key={entry.id}>
                     <span className="report-date-cell">{dateToJalaliStr(new Date(entry.created_at))}</span>
                     <span>{transactionTypeLabel[entry.transaction_type] ?? entry.transaction_type}</span>
@@ -362,6 +376,18 @@ export function CustomerDetail({ customerId, customerName, onBack }: CustomerDet
                   </div>
                 ))}
               </div>
+              {loyaltyHistory.length > POINTS_PREVIEW && (
+                <button
+                  type="button"
+                  className="text-button"
+                  style={{ marginTop: 10 }}
+                  onClick={() => setShowAllPoints((current) => !current)}
+                >
+                  {showAllPoints
+                    ? t("showFewer")
+                    : t("showAllCount").replace("{count}", String(loyaltyHistory.length))}
+                </button>
+              )}
             </section>
           )}
 
@@ -374,7 +400,7 @@ export function CustomerDetail({ customerId, customerName, onBack }: CustomerDet
               <span>{t("credit")}</span>
               <span>{t("balance")}</span>
             </div>
-            {ledger.entries.map((entry) => {
+            {(showAllLedger ? ledger.entries : ledger.entries.slice(0, LEDGER_PREVIEW)).map((entry) => {
               // Sale rows drill into the full invoice (SaleDetailView) —
               // payment rows have nothing to drill into. entry.id is
               // "sale-{numeric id}" from the backend (services/financials.py).
@@ -416,6 +442,18 @@ export function CustomerDetail({ customerId, customerName, onBack }: CustomerDet
             })}
             {!loading && ledger.entries.length === 0 && (
               <div className="empty-state">{t("noTransactions")}</div>
+            )}
+            {ledger.entries.length > LEDGER_PREVIEW && (
+              <button
+                type="button"
+                className="text-button"
+                style={{ marginTop: 10 }}
+                onClick={() => setShowAllLedger((current) => !current)}
+              >
+                {showAllLedger
+                  ? t("showFewer")
+                  : t("showAllCount").replace("{count}", String(ledger.entries.length))}
+              </button>
             )}
           </section>
         </>
