@@ -273,7 +273,12 @@ const fa = {
   topDebtors: "بدهکاران برتر",
   latestTransactions: "آخرین تراکنش‌ها",
   profitTrend: "روند سود",
-  profitSubtitle: "سود خالص روزانه",
+  // Gross, not net: services/dashboard.py::get_summary computes this as
+  // revenue − cost of goods − invoice discount, with no operating expenses
+  // or payroll deducted. Only the reports page's netProfitTitle is truly net
+  // (see services/reports.py::net_profit). Calling both "سود خالص" made the
+  // dashboard overstate profit by the whole operating-expense line.
+  profitSubtitle: "سود ناخالص روزانه",
   noData: "داده‌ای موجود نیست",
   loginTitle: "ورود به سامانه",
   username: "نام کاربری",
@@ -899,7 +904,7 @@ const en: Record<string, string> = {
   topDebtors: "Top Debtors",
   latestTransactions: "Latest Transactions",
   profitTrend: "Profit trend",
-  profitSubtitle: "Daily net profit",
+  profitSubtitle: "Daily gross profit",
   noData: "No data yet",
   loginTitle: "Sign in",
   username: "Username",
