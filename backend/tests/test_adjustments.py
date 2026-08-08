@@ -118,6 +118,11 @@ def test_return_purchase_items_decreases_stock() -> None:
         purchase = process_purchase(
             database,
             PurchaseCreate(
+                # Restocking at a cost the product has not carried before, with
+                # stock still on the shelf, trips the dual-pricing gate — see
+                # services/purchases.py. Confirming without
+                # dual_pricing_new_sale_prices keeps one price.
+                confirm_dual_pricing=True,
                 items=[PurchaseItemCreate(product_id=rice.id, quantity=Decimal("10"), unit_cost=Decimal("8"))]
             ),
         )
@@ -138,6 +143,7 @@ def test_return_purchase_items_raises_on_negative_stock() -> None:
         purchase = process_purchase(
             database,
             PurchaseCreate(
+                confirm_dual_pricing=True,  # see the note in the test above
                 items=[PurchaseItemCreate(product_id=rice.id, quantity=Decimal("1"), unit_cost=Decimal("8"))]
             ),
         )

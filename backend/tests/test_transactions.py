@@ -101,9 +101,16 @@ def test_purchase_updates_stock_cost_and_inventory() -> None:
 
     with Session(engine) as database:
         tea = create_product(database, name="Tea", stock="4")
+        # Buying in at a new cost while stock is still on the shelf is exactly
+        # what the dual-pricing gate asks about, and this product has both.
+        # confirm_dual_pricing on its own means "yes, I know — keep one price":
+        # _apply_dual_pricing() only splits the price when
+        # dual_pricing_new_sale_prices is supplied too, so this stays the plain
+        # single-price purchase the assertions below describe.
         purchase = process_purchase(
             database,
             PurchaseCreate(
+                confirm_dual_pricing=True,
                 items=[
                     PurchaseItemCreate(
                         product_id=tea.id,
@@ -136,6 +143,7 @@ def test_purchase_item_optional_fields_are_nullable_and_do_not_block_entry() -> 
         purchase = process_purchase(
             database,
             PurchaseCreate(
+                confirm_dual_pricing=True,  # see the note in the test above
                 items=[
                     PurchaseItemCreate(
                         product_id=tea.id,
