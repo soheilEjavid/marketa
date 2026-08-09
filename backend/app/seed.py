@@ -987,10 +987,34 @@ def _finishing_touches(database, rng, ctx):
     # Dead stock: a few lines the shop over-ordered and stopped selling.
     # Nothing has moved on them for months, which is exactly what the
     # dead-stock report is meant to surface.
+    #
+    # Topping the shelf up needs a real stock movement behind it. Assigning
+    # stock_quantity directly left the one thing every stock figure in this
+    # app is checked against — the sum of a product's inventory transactions
+    # — short by the difference, so the seeded database shipped with a
+    # product whose ledger disagreed with its own shelf.
     slow = sorted(products, key=lambda p: p._popularity)[:6]
     for product in slow:
         if product.stock_quantity < 12:
-            product.stock_quantity = Decimal(rng.randint(14, 40))
+            topped_up = Decimal(rng.randint(14, 40))
+            delta = topped_up - product.stock_quantity
+            product.stock_quantity = topped_up
+            database.add(
+                InventoryTransaction(
+                    product_id=product.id,
+                    quantity_change=delta,
+                    transaction_type=InventoryTransactionType.ADJUSTMENT,
+                    related_id=None,
+                    # Months back, matching the over-ordering story this is
+                    # meant to tell — not today, or the dead-stock report
+                    # would show it as fresh movement.
+                    timestamp=datetime.combine(
+                        today - timedelta(days=rng.randint(120, 200)),
+                        datetime.min.time(),
+                        tzinfo=UTC,
+                    ),
+                )
+            )
 
     # A couple of dual-priced lines: new stock landed at a higher price
     # while the old batch is still on the shelf.
