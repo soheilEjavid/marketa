@@ -22,6 +22,7 @@ import { canViewSalaries } from "../permissions";
 import { getSession } from "../session";
 import { isoToJalaliStr } from "../utils/jalali";
 import type { Expense, ExpensePaymentMethod, SalaryAdvance, SalaryPayment, UserSummary } from "../types";
+import { AmountInput } from "../components/AmountInput";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -144,7 +145,7 @@ function AddExpenseModal({
 
         <label className="field">
           <span>{t("expenseAmount")}</span>
-          <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <AmountInput min="0" value={Number(amount) || null} onChange={(v) => setAmount(v === null ? "" : String(v))} />
         </label>
 
         <label className="field">
@@ -260,7 +261,7 @@ function AddSalaryAdvanceModal({
 
         <label className="field">
           <span>{t("salaryAdvanceAmount")}</span>
-          <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <AmountInput min="0" value={Number(amount) || null} onChange={(v) => setAmount(v === null ? "" : String(v))} />
         </label>
 
         <label className="field">
@@ -373,22 +374,20 @@ function AddSalaryPaymentModal({
 
         <label className="field">
           <span>{t("baseSalary")}</span>
-          <input type="number" min="0" step="0.01" value={baseAmount} onChange={(e) => setBaseAmount(e.target.value)} />
+          <AmountInput min="0" value={Number(baseAmount) || null} onChange={(v) => setBaseAmount(v === null ? "" : String(v))} />
         </label>
 
         <label className="field">
           <span>{t("bonusAmount")}</span>
-          <input type="number" min="0" step="0.01" value={bonusAmount} onChange={(e) => setBonusAmount(e.target.value)} />
+          <AmountInput min="0" value={Number(bonusAmount) || null} onChange={(v) => setBonusAmount(v === null ? "" : String(v))} />
         </label>
 
         <label className="field">
           <span>{t("otherDeductions")}</span>
-          <input
-            type="number"
+          <AmountInput
             min="0"
-            step="0.01"
-            value={otherDeductions}
-            onChange={(e) => setOtherDeductions(e.target.value)}
+            value={Number(otherDeductions) || null}
+            onChange={(v) => setOtherDeductions(v === null ? "" : String(v))}
           />
           {unsettledAdvanceTotal > 0 && (
             <small className="field-hint">

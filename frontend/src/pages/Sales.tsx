@@ -27,6 +27,7 @@ import {
   holdSale,
   resumeSale,
 } from "../api";
+import { AmountInput } from "../components/AmountInput";
 import { useI18n } from "../i18n";
 import { canOverrideCreditLimit } from "../permissions";
 import { getSession } from "../session";
@@ -321,12 +322,11 @@ export function Sales() {
     });
   }
 
-  function updateItemDiscount(productId: number, value: string) {
-    const parsed = Number(value);
+  function updateItemDiscount(productId: number, value: number) {
     setCart((current) =>
       current.map((line) =>
         line.product.id === productId
-          ? { ...line, discount: Number.isNaN(parsed) ? 0 : Math.max(0, parsed) }
+          ? { ...line, discount: Number.isNaN(value) ? 0 : Math.max(0, value) }
           : line,
       ),
     );
@@ -842,12 +842,10 @@ export function Sales() {
                 {discountOpen && (
                   <div className="cart-line-discount" style={{ gridColumn: "1 / -1" }}>
                     <span>{t("itemDiscount")}</span>
-                    <input
-                      type="number"
+                    <AmountInput
                       min="0"
-                      step="0.01"
-                      value={line.discount || ""}
-                      onChange={(event) => updateItemDiscount(line.product.id, event.target.value)}
+                      value={line.discount || null}
+                      onChange={(discount) => updateItemDiscount(line.product.id, discount ?? 0)}
                       placeholder="0"
                       autoFocus
                     />
@@ -915,13 +913,13 @@ export function Sales() {
               {loyaltyBalance.max_redeemable_points > 0 && (
                 <label className="field loyalty-redeem-field">
                   <span>{t("redeemPoints")} ({t("upTo")} {number(loyaltyBalance.max_redeemable_points)})</span>
-                  <input
-                    type="number"
+                  <AmountInput
+                    integer
+                    currencyAware={false}
                     min="0"
                     max={loyaltyBalance.max_redeemable_points}
-                    step="1"
-                    value={redeemPoints}
-                    onChange={(event) => setRedeemPoints(event.target.value)}
+                    value={Number(redeemPoints) || null}
+                    onChange={(points) => setRedeemPoints(points === null ? "" : String(points))}
                     placeholder="0"
                   />
                 </label>
@@ -932,12 +930,10 @@ export function Sales() {
           {invoiceDiscountOpen || invoiceDiscountValue > 0 ? (
             <label className="field">
               <span>{t("invoiceDiscount")}</span>
-              <input
-                type="number"
+              <AmountInput
                 min="0"
-                step="0.01"
-                value={invoiceDiscount}
-                onChange={(event) => setInvoiceDiscount(event.target.value)}
+                value={Number(invoiceDiscount) || null}
+                onChange={(discount) => setInvoiceDiscount(discount === null ? "" : String(discount))}
                 placeholder="0"
                 autoFocus={invoiceDiscountOpen}
               />
@@ -1014,13 +1010,11 @@ export function Sales() {
                     {t("cardToCard")}
                   </button>
                 </div>
-                <input
-                  type="number"
+                <AmountInput
                   min="0"
-                  step="0.01"
-                  value={line.amount || ""}
+                  value={line.amount || null}
                   placeholder={t("amount")}
-                  onChange={(event) => updatePaymentLine(line.key, { amount: parseNumeric(event.target.value) })}
+                  onChange={(amount) => updatePaymentLine(line.key, { amount: amount ?? 0 })}
                 />
                 <button
                   type="button"

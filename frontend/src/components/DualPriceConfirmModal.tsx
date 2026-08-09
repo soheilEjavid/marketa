@@ -4,6 +4,7 @@ import { AlertTriangle, X } from "lucide-react";
 import { useI18n } from "../i18n";
 import { Modal } from "./Modal";
 import type { DualPriceRequiredResponse } from "../api";
+import { AmountInput } from "./AmountInput";
 
 type DualPriceConfirmModalProps = {
   products: DualPriceRequiredResponse["products"];
@@ -76,12 +77,10 @@ export function DualPriceConfirmModal({
                   {t("dualPriceOldPrice")}: {money(product.current_sale_price)}
                 </small>
               )}
-              <input
-                type="number"
+              <AmountInput
                 min="0"
-                step="0.01"
-                value={prices[product.product_id] ?? ""}
-                onChange={(event) => updatePrice(product.product_id, event.target.value)}
+                value={Number(prices[product.product_id]) || null}
+                onChange={(v) => updatePrice(product.product_id, v === null ? "" : String(v))}
               />
             </label>
           </div>

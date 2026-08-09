@@ -35,6 +35,7 @@ import type {
   LoyaltyRewardCatalogRow,
 } from "../types";
 import { isoToJalaliStr, timestampToJalaliStr } from "../utils/jalali";
+import { AmountInput } from "../components/AmountInput";
 
 function reportBadgeClass(value: number): string {
   if (value > 0) return "metric-badge metric-badge-success";
@@ -202,41 +203,37 @@ export function LoyaltyClub() {
             {settingsMessage && <div className="feedback-banner success full-span">{settingsMessage}</div>}
             <label className="field">
               <span>{t("minInvoiceTotalForMembership")} ({t("optional")})</span>
-              <input
-                type="number"
+              <AmountInput
                 min="0"
-                value={minInvoiceTotalInput}
-                onChange={(event) => setMinInvoiceTotalInput(event.target.value)}
+                value={Number(minInvoiceTotalInput) || null}
+                onChange={(v) => setMinInvoiceTotalInput(v === null ? "" : String(v))}
                 placeholder={t("loyaltySettingsDisabledPlaceholder")}
               />
             </label>
             <label className="field">
               <span>{t("minInvoiceProfitForMembership")} ({t("optional")})</span>
-              <input
-                type="number"
+              <AmountInput
                 min="0"
-                value={minInvoiceProfitInput}
-                onChange={(event) => setMinInvoiceProfitInput(event.target.value)}
+                value={Number(minInvoiceProfitInput) || null}
+                onChange={(v) => setMinInvoiceProfitInput(v === null ? "" : String(v))}
                 placeholder={t("loyaltySettingsDisabledPlaceholder")}
               />
             </label>
             <label className="field">
               <span>{t("tierSilverMinSpend")} ({t("optional")})</span>
-              <input
-                type="number"
+              <AmountInput
                 min="0"
-                value={tierSilverInput}
-                onChange={(event) => setTierSilverInput(event.target.value)}
+                value={Number(tierSilverInput) || null}
+                onChange={(v) => setTierSilverInput(v === null ? "" : String(v))}
                 placeholder={t("loyaltySettingsDisabledPlaceholder")}
               />
             </label>
             <label className="field">
               <span>{t("tierGoldMinSpend")} ({t("optional")})</span>
-              <input
-                type="number"
+              <AmountInput
                 min="0"
-                value={tierGoldInput}
-                onChange={(event) => setTierGoldInput(event.target.value)}
+                value={Number(tierGoldInput) || null}
+                onChange={(v) => setTierGoldInput(v === null ? "" : String(v))}
                 placeholder={t("loyaltySettingsDisabledPlaceholder")}
               />
             </label>

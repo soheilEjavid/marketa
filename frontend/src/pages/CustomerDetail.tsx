@@ -16,6 +16,7 @@ import { getSession } from "../session";
 import type { CustomerLedger, LoyaltyBalance, LoyaltyRewardSuggestion, LoyaltyTransaction } from "../types";
 import { dateToJalaliStr } from "../utils/jalali";
 import { SaleDetailView } from "../components/SaleDetailView";
+import { AmountInput } from "../components/AmountInput";
 
 type CustomerDetailProps = {
   customerId: number;
@@ -236,12 +237,10 @@ export function CustomerDetail({ customerId, customerName, onBack }: CustomerDet
                 )}
                 <label className="field">
                   <span>{t("recordPaymentAmount")}</span>
-                  <input
-                    type="number"
+                  <AmountInput
                     min="0.01"
-                    step="0.01"
-                    value={paymentAmount}
-                    onChange={(event) => setPaymentAmount(event.target.value)}
+                    value={Number(paymentAmount) || null}
+                    onChange={(v) => setPaymentAmount(v === null ? "" : String(v))}
                     placeholder="0"
                     required
                   />

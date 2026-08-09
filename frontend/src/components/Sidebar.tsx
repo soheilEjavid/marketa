@@ -5,6 +5,7 @@ import {
   BarChart3,
   ChevronsLeft,
   ChevronsRight,
+  Coins,
   ContactRound,
   Factory,
   Landmark,
@@ -109,7 +110,7 @@ const SIDEBAR_WIDTH_COLLAPSED = "76px";
 const COLLAPSED_TOOLTIP_LEFT = 88; // SIDEBAR_WIDTH_COLLAPSED (76) + a small gap
 
 export function Sidebar({ activePage, onNavigate, session, onLogout }: SidebarProps) {
-  const { language, setLanguage, t } = useI18n();
+  const { language, setLanguage, currency, setCurrency, t } = useI18n();
   const navRef = useRef<HTMLElement>(null);
   // Only true when the nav list actually has more content below the fold
   // — the scroll-fade hint (see .nav-scroll-fade) stays hidden whenever
@@ -236,6 +237,19 @@ export function Sidebar({ activePage, onNavigate, session, onLogout }: SidebarPr
         >
           <Languages size={16} />
           <span className="nav-item-label">{t("switchLanguage")}</span>
+        </button>
+        <button
+          className="language-button"
+          onClick={() => setCurrency(currency === "toman" ? "rial" : "toman")}
+          onMouseEnter={(event) =>
+            showTooltip(event, t(currency === "toman" ? "switchCurrency" : "switchCurrencyBack"))
+          }
+          onMouseLeave={hideTooltip}
+        >
+          <Coins size={16} />
+          <span className="nav-item-label">
+            {t(currency === "toman" ? "switchCurrency" : "switchCurrencyBack")}
+          </span>
         </button>
         <button
           className="language-button is-logout"

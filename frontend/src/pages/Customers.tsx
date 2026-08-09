@@ -10,6 +10,7 @@ import { JalaliDatePicker } from "../components/JalaliDatePicker";
 import { useI18n } from "../i18n";
 import { Modal } from "../components/Modal";
 import type { Customer, CustomerInput } from "../types";
+import { AmountInput } from "../components/AmountInput";
 
 type CustomersProps = {
   onViewLedger: (customerId: number, customerName: string) => void;
@@ -204,11 +205,10 @@ export function Customers({ onViewLedger }: CustomersProps) {
               </label>
               <label className="field">
                 <span>{t("creditLimit")}</span>
-                <input
-                  type="number"
+                <AmountInput
                   min="0"
                   value={form.credit_limit}
-                  onChange={(event) => setForm({ ...form, credit_limit: Number(event.target.value) })}
+                  onChange={(creditLimit) => setForm({ ...form, credit_limit: creditLimit ?? 0 })}
                 />
               </label>
               <label className="field">

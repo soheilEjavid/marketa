@@ -7,6 +7,7 @@ import type { Product, Purchase } from "../types";
 import { Modal } from "./Modal";
 import { ProductCombobox } from "./ProductCombobox";
 import { JalaliDatePicker } from "./JalaliDatePicker";
+import { AmountInput } from "./AmountInput";
 
 type PurchaseEditFormProps = {
   purchase: Purchase;
@@ -169,23 +170,15 @@ export function PurchaseEditForm({ purchase, onClose, onSaved }: PurchaseEditFor
                     value={line.quantity}
                     onChange={(event) => updateLine(line.key, { quantity: Number(event.target.value) || 0 })}
                   />
-                  <input
-                    type="number"
+                  <AmountInput
                     min="0"
-                    step="0.01"
                     value={line.unitCost}
-                    onChange={(event) => updateLine(line.key, { unitCost: Number(event.target.value) || 0 })}
+                    onChange={(unitCost) => updateLine(line.key, { unitCost: unitCost ?? 0 })}
                   />
-                  <input
-                    type="number"
+                  <AmountInput
                     min="0"
-                    step="0.01"
-                    value={line.sellingPrice ?? ""}
-                    onChange={(event) =>
-                      updateLine(line.key, {
-                        sellingPrice: event.target.value.trim() ? Number(event.target.value) : null,
-                      })
-                    }
+                    value={line.sellingPrice}
+                    onChange={(sellingPrice) => updateLine(line.key, { sellingPrice })}
                   />
                   <JalaliDatePicker
                     value={line.expiryDate}

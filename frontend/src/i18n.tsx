@@ -29,6 +29,8 @@ const fa = {
   systemOnline: "سیستم آنلاین است",
   localStore: "فروشگاه محلی",
   switchLanguage: "English",
+  switchCurrency: "نمایش به ریال",
+  switchCurrencyBack: "نمایش به تومان",
   loading: "در حال بارگذاری…",
   retry: "تلاش دوباره",
   apiError: "ارتباط با سرور برقرار نشد.",
@@ -660,6 +662,8 @@ const en: Record<string, string> = {
   systemOnline: "System online",
   localStore: "Local store",
   switchLanguage: "فارسی",
+  switchCurrency: "Show in rial",
+  switchCurrencyBack: "Show in toman",
   loading: "Loading…",
   retry: "Try again",
   apiError: "Could not connect to the server.",
@@ -1268,13 +1272,32 @@ const en: Record<string, string> = {
 
 const messages: Record<Language, Record<string, string>> = { fa, en };
 
+/**
+ * Which unit amounts are shown and typed in. Everything is stored in toman —
+ * every column, every API field, every figure in the database — and this only
+ * changes the surface. Shops differ: price tags and everyday speech are
+ * usually toman, but bank statements, cheques and official paperwork are
+ * rial, and one shopkeeper's habit is not another's.
+ */
+export type Currency = "toman" | "rial";
+
+/** One toman is ten rial. */
+export const RIAL_PER_TOMAN = 10;
+
+export function currencyFactor(currency: Currency): number {
+  return currency === "rial" ? RIAL_PER_TOMAN : 1;
+}
+
 type I18nValue = {
   language: Language;
   direction: "rtl" | "ltr";
   locale: string;
+  currency: Currency;
   setLanguage: (language: Language) => void;
+  setCurrency: (currency: Currency) => void;
   t: (key: string) => string;
   number: (value: number) => string;
+  /** Takes toman — the stored unit — and renders it in the chosen one. */
   money: (value: number) => string;
 };
 
@@ -1284,6 +1307,10 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [language, setLanguage] = useState<Language>(() => {
     const saved = localStorage.getItem("marketa-language");
     return saved === "en" ? "en" : "fa";
+  });
+  const [currency, setCurrency] = useState<Currency>(() => {
+    const saved = localStorage.getItem("marketa-currency");
+    return saved === "rial" ? "rial" : "toman";
   });
   const direction = language === "fa" ? "rtl" : "ltr";
   const locale = language === "fa" ? "fa-IR" : "en-US";
@@ -1295,23 +1322,32 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     document.body.dir = direction;
   }, [direction, language]);
 
+  useEffect(() => {
+    localStorage.setItem("marketa-currency", currency);
+  }, [currency]);
+
   const value = useMemo<I18nValue>(
     () => ({
       language,
       direction,
       locale,
+      currency,
       setLanguage,
+      setCurrency,
       t: (key) => messages[language][key],
       number: (value) => value.toLocaleString(locale),
-      money: (value) =>
-        language === "fa"
-          ? `${value.toLocaleString(locale)} تومان`
-          : new Intl.NumberFormat(locale, {
-              style: "currency",
-              currency: "USD",
-            }).format(value),
+      money: (value) => {
+        // The argument is always toman; the unit conversion happens here and
+        // in AmountInput, and nowhere else, so no call site has to remember
+        // which unit it is holding.
+        const shown = value * currencyFactor(currency);
+        if (language !== "fa") {
+          return new Intl.NumberFormat(locale, { style: "currency", currency: "USD" }).format(value);
+        }
+        return `${shown.toLocaleString(locale)} ${currency === "rial" ? "ریال" : "تومان"}`;
+      },
     }),
-    [direction, language, locale],
+    [currency, direction, language, locale],
   );
 
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;

@@ -7,6 +7,7 @@ import { calculateMarginPct, formatMarginPct } from "../lib/margin";
 import { JalaliDatePicker } from "./JalaliDatePicker";
 import { Modal } from "./Modal";
 import type { AuditLogEntry, Category, Product } from "../types";
+import { AmountInput } from "./AmountInput";
 
 type ProductFormModalProps = {
   /** Present => edit mode; absent/null => create mode. */
@@ -525,24 +526,20 @@ export function ProductFormModal({
           <div className="form-grid">
             <label className="field">
               <span>{t("purchasePrice")} *</span>
-              <input
-                type="number"
+              <AmountInput
                 min="0"
-                step="0.01"
-                value={purchasePrice}
-                onChange={(event) => setPurchasePrice(event.target.value)}
+                value={Number(purchasePrice) || null}
+                onChange={(v) => setPurchasePrice(v === null ? "" : String(v))}
               />
               {errors.purchasePrice && <small className="field-error">{errors.purchasePrice}</small>}
             </label>
 
             <label className="field">
               <span>{t("salePrice")} *</span>
-              <input
-                type="number"
+              <AmountInput
                 min="0"
-                step="0.01"
-                value={salePrice}
-                onChange={(event) => setSalePrice(event.target.value)}
+                value={Number(salePrice) || null}
+                onChange={(v) => setSalePrice(v === null ? "" : String(v))}
               />
               {errors.salePrice && <small className="field-error">{errors.salePrice}</small>}
             </label>
@@ -557,12 +554,10 @@ export function ProductFormModal({
             {showAdvanced && (
               <label className="field">
                 <span>{t("minSalePrice")}</span>
-                <input
-                  type="number"
+                <AmountInput
                   min="0"
-                  step="0.01"
-                  value={minSalePrice}
-                  onChange={(event) => setMinSalePrice(event.target.value)}
+                  value={Number(minSalePrice) || null}
+                  onChange={(v) => setMinSalePrice(v === null ? "" : String(v))}
                 />
                 <small className="field-hint">{t("minSalePriceHint")}</small>
               </label>

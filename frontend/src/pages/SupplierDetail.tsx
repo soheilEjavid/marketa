@@ -5,6 +5,7 @@ import { createSupplierPayment, getErrorMessage, getSupplierLedger } from "../ap
 import { useI18n } from "../i18n";
 import type { SupplierLedger } from "../types";
 import { PurchaseDetailView } from "../components/PurchaseDetailView";
+import { AmountInput } from "../components/AmountInput";
 
 type SupplierDetailProps = {
   supplierId: number;
@@ -119,12 +120,10 @@ export function SupplierDetail({ supplierId, supplierName, onBack }: SupplierDet
                 )}
                 <label className="field">
                   <span>{t("recordPaymentAmount")}</span>
-                  <input
-                    type="number"
+                  <AmountInput
                     min="0.01"
-                    step="0.01"
-                    value={paymentAmount}
-                    onChange={(event) => setPaymentAmount(event.target.value)}
+                    value={Number(paymentAmount) || null}
+                    onChange={(v) => setPaymentAmount(v === null ? "" : String(v))}
                     placeholder="0"
                     required
                   />

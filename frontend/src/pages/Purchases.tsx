@@ -18,6 +18,7 @@ import {
 
 import { ApiError, createPurchase, getProducts, getSuppliers } from "../api";
 import type { DualPriceRequiredResponse } from "../api";
+import { AmountInput } from "../components/AmountInput";
 import { useI18n } from "../i18n";
 import type { ExtractedInvoice, Product, Supplier } from "../types";
 import { extractInvoiceData, matchProductName } from "../invoice-scanner";
@@ -780,15 +781,13 @@ export function Purchases() {
                     }
                   />
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <input
-                      type="number"
+                    <AmountInput
                       min="0"
-                      step="0.01"
                       value={line.isPromotional ? 0 : line.unitCost}
                       disabled={line.isPromotional}
                       placeholder={line.isPromotional ? t("promotionalFree") : undefined}
-                      onChange={(event) =>
-                        updateLine(line.key, { unitCost: parseNumeric(event.target.value) })
+                      onChange={(unitCost) =>
+                        updateLine(line.key, { unitCost: unitCost ?? 0 })
                       }
                     />
                     <label className="promotional-checkbox" title={t("promotionalHint")}>
@@ -803,15 +802,11 @@ export function Purchases() {
                     </label>
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                    <input
-                      type="number"
+                    <AmountInput
                       min="0"
-                      step="0.01"
-                      value={line.sellingPrice ?? ""}
-                      onChange={(event) =>
-                        updateLine(line.key, {
-                          sellingPrice: parseOptionalNumber(event.target.value),
-                        })
+                      value={line.sellingPrice}
+                      onChange={(sellingPrice) =>
+                        updateLine(line.key, { sellingPrice })
                       }
                     />
                     {(() => {
@@ -887,13 +882,11 @@ export function Purchases() {
                 <option value="card">{t("bankTransfer")}</option>
                 <option value="check">{t("check")}</option>
               </select>
-              <input
-                type="number"
+              <AmountInput
                 min="0"
-                step="0.01"
-                value={line.amount || ""}
+                value={line.amount || null}
                 placeholder={t("amount")}
-                onChange={(event) => updatePaymentLine(line.key, { amount: parseNumeric(event.target.value) })}
+                onChange={(amount) => updatePaymentLine(line.key, { amount: amount ?? 0 })}
               />
               {line.method === "check" && (
                 <>

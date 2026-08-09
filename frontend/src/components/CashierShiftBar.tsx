@@ -5,6 +5,7 @@ import { closeShift, getCurrentShift, getUsers, openShift } from "../api";
 import { useI18n } from "../i18n";
 import { Modal } from "./Modal";
 import type { CashierShift, UserSummary } from "../types";
+import { AmountInput } from "./AmountInput";
 
 const LAST_CASHIER_KEY = "marketa-last-cashier-id";
 
@@ -134,12 +135,10 @@ export function CashierShiftBar() {
             </label>
             <label className="field">
               <span>{t("openingCash")}</span>
-              <input
-                type="number"
+              <AmountInput
                 min="0"
-                step="0.01"
-                value={openingCash}
-                onChange={(event) => setOpeningCash(event.target.value)}
+                value={Number(openingCash) || null}
+                onChange={(v) => setOpeningCash(v === null ? "" : String(v))}
               />
             </label>
             <div className="form-actions">
@@ -174,12 +173,10 @@ export function CashierShiftBar() {
             {error && <div className="feedback-banner error">{error}</div>}
             <label className="field">
               <span>{t("countedCash")}</span>
-              <input
-                type="number"
+              <AmountInput
                 min="0"
-                step="0.01"
-                value={closingCash}
-                onChange={(event) => setClosingCash(event.target.value)}
+                value={Number(closingCash) || null}
+                onChange={(v) => setClosingCash(v === null ? "" : String(v))}
               />
             </label>
             <div className="form-actions">

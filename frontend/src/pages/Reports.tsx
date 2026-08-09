@@ -1079,10 +1079,12 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
                         <div className="report-table-row report-cols-3 animated-line" key={row.product_id}>
                           <strong>{row.product_name}</strong>
                           <span className="muted-text" style={{ justifySelf: "start" }}>
+                            {/* money() rather than number() + a fixed "تومان":
+                                these are prices, so they have to follow the
+                                toman/rial preference like every other figure. */}
                             <span style={{ direction: "ltr", unicodeBidi: "isolate" }}>
-                              {number(Number(row.price_period1))} → {number(Number(row.price_period2))}
-                            </span>{" "}
-                            {t("toman")}
+                              {money(Number(row.price_period1))} → {money(Number(row.price_period2))}
+                            </span>
                           </span>
                           <span className={reportBadgeClass(Number(row.pct_change))}>
                             {formatSignedPct(Number(row.pct_change), number)}

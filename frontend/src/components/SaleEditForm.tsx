@@ -6,6 +6,7 @@ import { useI18n } from "../i18n";
 import type { Product, Sale } from "../types";
 import { Modal } from "./Modal";
 import { ProductCombobox } from "./ProductCombobox";
+import { AmountInput } from "./AmountInput";
 
 type SaleEditFormProps = {
   sale: Sale;
@@ -155,26 +156,22 @@ export function SaleEditForm({ sale, onClose, onSaved }: SaleEditFormProps) {
                     <strong>{line.product.name}</strong>
                     <div className="cart-line-discount">
                       <span>{t("unitPrice")}</span>
-                      <input
-                        type="number"
+                      <AmountInput
                         min="0"
-                        step="0.01"
                         value={line.unitPrice}
-                        onChange={(event) =>
-                          updateLine(line.id, index, { unitPrice: Number(event.target.value) || 0 })
+                        onChange={(unitPrice) =>
+                          updateLine(line.id, index, { unitPrice: unitPrice ?? 0 })
                         }
                       />
                     </div>
                     <div className="cart-line-discount">
                       <span>{t("itemDiscount")}</span>
-                      <input
-                        type="number"
+                      <AmountInput
                         min="0"
-                        step="0.01"
-                        value={line.discount || ""}
+                        value={line.discount || null}
                         placeholder="0"
-                        onChange={(event) =>
-                          updateLine(line.id, index, { discount: Number(event.target.value) || 0 })
+                        onChange={(discount) =>
+                          updateLine(line.id, index, { discount: discount ?? 0 })
                         }
                       />
                     </div>
@@ -234,12 +231,10 @@ export function SaleEditForm({ sale, onClose, onSaved }: SaleEditFormProps) {
 
             <label className="field">
               <span>{t("invoiceDiscount")}</span>
-              <input
-                type="number"
+              <AmountInput
                 min="0"
-                step="0.01"
-                value={invoiceDiscount}
-                onChange={(event) => setInvoiceDiscount(event.target.value)}
+                value={Number(invoiceDiscount) || null}
+                onChange={(v) => setInvoiceDiscount(v === null ? "" : String(v))}
               />
             </label>
 
