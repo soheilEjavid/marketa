@@ -1,7 +1,7 @@
 from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from app.models.entities import Customer, CustomerPayment, PaymentStatus, Purchase, Sale, Supplier, SupplierPayment
+from app.models.entities import Customer, CustomerPayment, DocumentStatus, PaymentStatus, Purchase, Sale, Supplier, SupplierPayment
 from app.schemas.financial import PaymentCreate
 
 class FinancialError(ValueError): pass
@@ -10,6 +10,36 @@ def payment_status(total: Decimal, paid: Decimal) -> PaymentStatus:
     if paid <= 0: return PaymentStatus.UNPAID
     if paid >= total: return PaymentStatus.PAID
     return PaymentStatus.PARTIAL
+
+def _settle_oldest_first(documents: list, amount: Decimal) -> None:
+    """Spread a payment made against a party's overall balance across their
+    open invoices, oldest first.
+
+    A payment with no document_id used to move the party's balance and
+    nothing else, so every invoice behind it stayed marked unpaid for good.
+    A customer who had settled up in full still had a screen full of red
+    invoices and a balance that disagreed with their sum — the two numbers
+    a shopkeeper is most likely to compare.
+
+    Oldest-first is the ordinary rule: the money goes against the debt
+    that has been outstanding longest. The payment row itself deliberately
+    stays unallocated (sale_id/purchase_id null) — that is what
+    shifts.py::close_shift keys on to tell a settlement that walked in
+    today from a tender that was already counted at the till when the sale
+    was rung up. So an invoice settled this way carries no per-invoice
+    payment row of its own; the money is on the party's ledger, which is
+    where a balance-forward account keeps it.
+    """
+    for document in documents:
+        if amount <= 0:
+            break
+        applied = min(amount, document.remaining_amount)
+        if applied <= 0:
+            continue
+        document.paid_amount += applied
+        document.remaining_amount = document.total - document.paid_amount
+        document.payment_status = payment_status(document.total, document.paid_amount)
+        amount -= applied
 
 def record_customer_payment(database: Session, customer: Customer, data: PaymentCreate, *, commit: bool = True) -> CustomerPayment:
     sale = database.get(Sale, data.document_id) if data.document_id else None
@@ -29,6 +59,19 @@ def record_customer_payment(database: Session, customer: Customer, data: Payment
         sale.paid_amount += data.amount
         sale.remaining_amount = sale.total - sale.paid_amount
         sale.payment_status = payment_status(sale.total, sale.paid_amount)
+    else:
+        _settle_oldest_first(
+            list(database.scalars(
+                select(Sale)
+                .where(
+                    Sale.customer_id == customer.id,
+                    Sale.status == DocumentStatus.COMPLETED,
+                    Sale.remaining_amount > 0,
+                )
+                .order_by(Sale.created_at, Sale.id)
+            )),
+            data.amount,
+        )
     customer.balance = max(Decimal("0"), customer.balance - data.amount)
     if commit:
         database.commit(); database.refresh(payment)
@@ -50,6 +93,19 @@ def record_supplier_payment(database: Session, supplier: Supplier, data: Payment
         purchase.paid_amount += data.amount
         purchase.remaining_amount = purchase.total - purchase.paid_amount
         purchase.payment_status = payment_status(purchase.total, purchase.paid_amount)
+    else:
+        _settle_oldest_first(
+            list(database.scalars(
+                select(Purchase)
+                .where(
+                    Purchase.supplier_id == supplier.id,
+                    Purchase.status == DocumentStatus.COMPLETED,
+                    Purchase.remaining_amount > 0,
+                )
+                .order_by(Purchase.created_at, Purchase.id)
+            )),
+            data.amount,
+        )
     supplier.balance = max(Decimal("0"), supplier.balance - data.amount)
     if commit:
         database.commit(); database.refresh(payment)
