@@ -5,7 +5,6 @@ from enum import StrEnum
 from sqlalchemy import (
     Boolean,
     Date,
-    DateTime,
     Enum,
     ForeignKey,
     Integer,
@@ -17,7 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base, TimestampMixin
+from app.models.base import Base, TimestampMixin, UtcDateTime
 
 
 class PaymentMethod(StrEnum):
@@ -137,7 +136,7 @@ class Product(Base, TimestampMixin):
     old_purchase_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     old_sale_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     old_price_stock_estimate: Mapped[int | None] = mapped_column(Integer)
-    dual_price_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    dual_price_started_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
     category: Mapped[Category | None] = relationship(back_populates="products")
     sale_items: Mapped[list["SaleItem"]] = relationship(back_populates="product")
@@ -195,7 +194,7 @@ class Supplier(Base, TimestampMixin):
     address: Mapped[str | None] = mapped_column(Text)
     credit_limit: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     balance: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
-    last_purchase_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_purchase_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     notes: Mapped[str | None] = mapped_column(Text)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
@@ -329,7 +328,7 @@ class CustomerPayment(Base, TimestampMixin):
     method: Mapped[PaymentMethod] = mapped_column(Enum(PaymentMethod))
     reference: Mapped[str | None] = mapped_column(String(120))
     notes: Mapped[str | None] = mapped_column(Text)
-    paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    paid_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now(), index=True)
 
     customer: Mapped[Customer] = relationship(back_populates="payments")
     sale: Mapped[Sale | None] = relationship(back_populates="customer_payments")
@@ -354,7 +353,7 @@ class SupplierPayment(Base, TimestampMixin):
     check_due_date: Mapped[date | None] = mapped_column(Date, index=True)
     # Only meaningful when method == CHECK; null for cash/card lines.
     check_status: Mapped[CheckStatus | None] = mapped_column(Enum(CheckStatus))
-    paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    paid_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now(), index=True)
 
     supplier: Mapped[Supplier | None] = relationship(back_populates="payments")
     purchase: Mapped[Purchase | None] = relationship(back_populates="payment_lines")
@@ -392,7 +391,7 @@ class SalePaymentLine(Base, TimestampMixin):
     check_bank_name: Mapped[str | None] = mapped_column(String(120))
     check_due_date: Mapped[date | None] = mapped_column(Date, index=True)
     check_status: Mapped[CheckStatus | None] = mapped_column(Enum(CheckStatus))
-    paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    paid_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now(), index=True)
 
     sale: Mapped["Sale"] = relationship(back_populates="payment_lines")
 
@@ -416,8 +415,8 @@ class CashierShift(Base, TimestampMixin):
     closing_cash: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     expected_cash: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     difference: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
-    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
-    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    opened_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now(), index=True)
+    closed_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
     notes: Mapped[str | None] = mapped_column(Text)
 
     cashier: Mapped["User"] = relationship()
@@ -435,7 +434,7 @@ class AuditLog(Base, TimestampMixin):
     entity_id: Mapped[int | None] = mapped_column(Integer, index=True)
     details: Mapped[str | None] = mapped_column(Text)
     occurred_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), index=True
+        UtcDateTime, server_default=func.now(), index=True
     )
 
 
@@ -450,7 +449,7 @@ class InventoryTransaction(Base):
     )
     related_id: Mapped[int | None] = mapped_column(Integer, index=True)
     timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), index=True
+        UtcDateTime, server_default=func.now(), index=True
     )
 
     product: Mapped[Product] = relationship(back_populates="inventory_transactions")
@@ -471,7 +470,7 @@ class LoyaltyPointTransaction(Base, TimestampMixin):
     points: Mapped[int] = mapped_column(Integer)
     transaction_type: Mapped[LoyaltyTransactionType] = mapped_column(Enum(LoyaltyTransactionType))
     sale_id: Mapped[int | None] = mapped_column(ForeignKey("sales.id"), index=True)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    expires_at: Mapped[datetime | None] = mapped_column(UtcDateTime, index=True)
     expired: Mapped[bool] = mapped_column(Boolean, default=False)
     reason: Mapped[str | None] = mapped_column(Text)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer)
@@ -579,7 +578,7 @@ class SalaryPayment(Base, TimestampMixin):
     deductions_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0)
     net_amount: Mapped[Decimal] = mapped_column(Numeric(14, 2))
     payment_method: Mapped[ExpensePaymentMethod] = mapped_column(Enum(ExpensePaymentMethod))
-    paid_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    paid_at: Mapped[datetime] = mapped_column(UtcDateTime, server_default=func.now())
     notes: Mapped[str | None] = mapped_column(Text)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer)
 

@@ -1,13 +1,14 @@
 import { useMemo } from "react";
 import { useI18n } from "../i18n";
 import type { DashboardSummary } from "../types";
+import { localIsoDate } from "../utils/jalali";
 
 type SalesChartProps = {
   summary: DashboardSummary | null;
 };
 
 function isToday(isoDate: string): boolean {
-  return isoDate === new Date().toISOString().slice(0, 10);
+  return isoDate === localIsoDate();
 }
 
 export function SalesChart({ summary }: SalesChartProps) {

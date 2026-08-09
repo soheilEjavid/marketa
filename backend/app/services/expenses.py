@@ -4,6 +4,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.store_time import business_day
 from app.models.entities import Expense, SalaryAdvance, SalaryPayment, User
 from app.schemas.expense import (
     ExpenseCreate,
@@ -271,8 +272,8 @@ def total_operating_expenses(database: Session, period_start: date, period_end: 
 
     salary_rows = database.execute(
         select(SalaryPayment.net_amount).where(
-            func.date(SalaryPayment.paid_at) >= period_start,
-            func.date(SalaryPayment.paid_at) <= period_end,
+            business_day(SalaryPayment.paid_at) >= period_start,
+            business_day(SalaryPayment.paid_at) <= period_end,
         )
     ).all()
     salary_sum = sum((row[0] for row in salary_rows), Decimal("0"))

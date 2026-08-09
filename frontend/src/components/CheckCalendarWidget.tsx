@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { getChecks } from "../api";
 import { useI18n } from "../i18n";
-import { getJalaliMonthGrid, getJalaliMonths, parseJalaliDateString, todayJalali } from "../utils/jalali";
+import { getJalaliMonthGrid, getJalaliMonths, localIsoDate, parseJalaliDateString, todayJalali } from "../utils/jalali";
 import type { CheckRead } from "../types";
 import type { Page } from "./Sidebar";
 
@@ -51,7 +51,7 @@ export function CheckCalendarWidget({ onNavigate }: CheckCalendarWidgetProps) {
 
   const grid = useMemo(() => getJalaliMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
   const months = getJalaliMonths();
-  const todayIso = new Date().toISOString().slice(0, 10);
+  const todayIso = localIsoDate();
 
   function goToMonth(delta: number) {
     let month = viewMonth + delta;

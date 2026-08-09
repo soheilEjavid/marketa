@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import selectinload
 
+from app.core.store_time import business_day, business_day_bounds, business_day_now
 from app.models.entities import (
     AuditLog, CashierShift, Category, Customer, CustomerPayment, DocumentStatus, PaymentMethod,
     Product, Purchase, PurchaseItem, Sale, SaleItem, SalePaymentLine, Supplier, User,
@@ -19,20 +20,20 @@ def daily_sales_summary(
     from_date: date | None = None,
     to_date: date | None = None,
 ) -> list[dict]:
-    today = datetime.now(UTC).date()
+    today = business_day_now()
     from_date = from_date or today - timedelta(days=30)
     to_date = to_date or today
     sale_rows = (
         select(
             Sale.id.label("sale_id"),
-            func.date(Sale.created_at).label("sale_date"),
+            business_day(Sale.created_at).label("sale_date"),
             Sale.total,
             Sale.discount,
         )
         .where(
             Sale.status == DocumentStatus.COMPLETED,
-            func.date(Sale.created_at) >= from_date,
-            func.date(Sale.created_at) <= to_date,
+            business_day(Sale.created_at) >= from_date,
+            business_day(Sale.created_at) <= to_date,
         )
         .subquery()
     )
@@ -150,13 +151,13 @@ def payment_method_breakdown(
     split-payment feature) fall back to their whole Sale.total under
     Sale.payment_method, same as before this changed.
     """
-    today = datetime.now(UTC).date()
+    today = business_day_now()
     from_date = from_date or today - timedelta(days=30)
     to_date = to_date or today
     date_filters = (
         Sale.status == DocumentStatus.COMPLETED,
-        func.date(Sale.created_at) >= from_date,
-        func.date(Sale.created_at) <= to_date,
+        business_day(Sale.created_at) >= from_date,
+        business_day(Sale.created_at) <= to_date,
     )
 
     # Sales that recorded actual tender lines: split by real payment method.
@@ -242,13 +243,13 @@ def dead_stock(database: Session, *, lookback_days: int = 30) -> list[dict]:
     (or have never sold at all). Zero-stock products are excluded — they
     aren't tying up capital regardless of how long it's been since they sold.
     """
-    today = datetime.now(UTC).date()
+    today = business_day_now()
     cutoff = today - timedelta(days=lookback_days)
 
     last_sale = (
         select(
             SaleItem.product_id.label("product_id"),
-            func.max(func.date(Sale.created_at)).label("last_sale_date"),
+            func.max(business_day(Sale.created_at)).label("last_sale_date"),
         )
         .join(Sale, Sale.id == SaleItem.sale_id)
         .where(Sale.status == DocumentStatus.COMPLETED)
@@ -271,9 +272,8 @@ def dead_stock(database: Session, *, lookback_days: int = 30) -> list[dict]:
     ).all()
 
     result = []
-    for product_id, product_name, category_name, stock_quantity, purchase_price, last_sale_date_str in rows:
-        if last_sale_date_str is not None:
-            last_sale_date = date.fromisoformat(last_sale_date_str)
+    for product_id, product_name, category_name, stock_quantity, purchase_price, last_sale_date in rows:
+        if last_sale_date is not None:
             if last_sale_date >= cutoff:
                 continue
             days_since_last_sale = (today - last_sale_date).days
@@ -312,7 +312,7 @@ def near_expiry_products(
     Entirely independent of the loyalty near-expiry check — this function
     shares no code or threshold with services/loyalty.py.
     """
-    today = datetime.now(UTC).date()
+    today = business_day_now()
     orange_cutoff = today + timedelta(days=orange_days)
 
     rows = database.execute(
@@ -365,7 +365,7 @@ def cashier_performance(
     no sales-refund/return concept at all, and fabricating a zero would
     violate the "no calculated fake values" requirement.
     """
-    today = datetime.now(UTC).date()
+    today = business_day_now()
     from_date = from_date or today - timedelta(days=30)
     to_date = to_date or today
 
@@ -382,8 +382,8 @@ def cashier_performance(
         .join(User, CashierShift.cashier_id == User.id)
         .where(
             Sale.status == DocumentStatus.COMPLETED,
-            func.date(Sale.created_at) >= from_date,
-            func.date(Sale.created_at) <= to_date,
+            business_day(Sale.created_at) >= from_date,
+            business_day(Sale.created_at) <= to_date,
         )
         .group_by(CashierShift.cashier_id, User.full_name)
     ).all()
@@ -404,8 +404,8 @@ def cashier_performance(
         .join(CashierShift, Sale.shift_id == CashierShift.id)
         .where(
             Sale.status == DocumentStatus.COMPLETED,
-            func.date(Sale.created_at) >= from_date,
-            func.date(Sale.created_at) <= to_date,
+            business_day(Sale.created_at) >= from_date,
+            business_day(Sale.created_at) <= to_date,
         )
         .group_by(CashierShift.cashier_id, SalePaymentLine.method)
     ).all()
@@ -419,8 +419,8 @@ def cashier_performance(
         .join(CashierShift, Sale.shift_id == CashierShift.id)
         .where(
             Sale.status == DocumentStatus.COMPLETED,
-            func.date(Sale.created_at) >= from_date,
-            func.date(Sale.created_at) <= to_date,
+            business_day(Sale.created_at) >= from_date,
+            business_day(Sale.created_at) <= to_date,
             Sale.id.notin_(select(SalePaymentLine.sale_id)),
         )
         .group_by(CashierShift.cashier_id, Sale.payment_method)
@@ -446,8 +446,8 @@ def cashier_performance(
         .where(
             AuditLog.entity_type == "sale",
             AuditLog.action.in_(["edit", "hold", "resume", "discard"]),
-            func.date(AuditLog.occurred_at) >= from_date,
-            func.date(AuditLog.occurred_at) <= to_date,
+            business_day(AuditLog.occurred_at) >= from_date,
+            business_day(AuditLog.occurred_at) <= to_date,
         )
         .group_by(CashierShift.cashier_id, AuditLog.action)
     ).all()
@@ -550,9 +550,9 @@ def loyalty_redemptions(
         .order_by(CustomerPayment.paid_at.desc())
     )
     if from_date:
-        query = query.where(CustomerPayment.paid_at >= datetime.combine(from_date, datetime.min.time(), tzinfo=UTC))
+        query = query.where(CustomerPayment.paid_at >= business_day_bounds(from_date)[0])
     if to_date:
-        query = query.where(CustomerPayment.paid_at <= datetime.combine(to_date, datetime.max.time(), tzinfo=UTC))
+        query = query.where(CustomerPayment.paid_at < business_day_bounds(to_date)[1])
 
     payments = database.scalars(query).all()
 
@@ -581,7 +581,7 @@ def upcoming_birthdays(database: Session, *, within_days: int = 30) -> list[dict
     messaging exists in this codebase — this is a visible list for a
     manager to act on manually, matching the low-stock widget's pattern.
     """
-    today = datetime.now(UTC).date()
+    today = business_day_now()
     customers = database.scalars(
         select(Customer).where(Customer.is_active.is_(True), Customer.birth_date.is_not(None))
     ).all()
@@ -791,8 +791,8 @@ def _period_purchase_agg(database: Session, start: date, end: date) -> dict[int,
         .where(
             Purchase.status == DocumentStatus.COMPLETED,
             PurchaseItem.unit_cost > 0,
-            func.date(Purchase.created_at) >= start,
-            func.date(Purchase.created_at) <= end,
+            business_day(Purchase.created_at) >= start,
+            business_day(Purchase.created_at) <= end,
         )
         .group_by(PurchaseItem.product_id)
     ).all()
@@ -811,8 +811,8 @@ def _period_sale_agg(database: Session, start: date, end: date) -> dict[int, tup
         .join(Sale, Sale.id == SaleItem.sale_id)
         .where(
             Sale.status == DocumentStatus.COMPLETED,
-            func.date(Sale.created_at) >= start,
-            func.date(Sale.created_at) <= end,
+            business_day(Sale.created_at) >= start,
+            business_day(Sale.created_at) <= end,
         )
         .group_by(SaleItem.product_id)
     ).all()

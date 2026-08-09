@@ -34,7 +34,7 @@ import type {
   LoyaltyLiabilityRow,
   LoyaltyRewardCatalogRow,
 } from "../types";
-import { isoToJalaliStr } from "../utils/jalali";
+import { isoToJalaliStr, timestampToJalaliStr } from "../utils/jalali";
 
 function reportBadgeClass(value: number): string {
   if (value > 0) return "metric-badge metric-badge-success";
@@ -460,7 +460,7 @@ export function LoyaltyClub() {
               <div className="report-table-row report-cols-4 animated-line" key={row.customer_id}>
                 <strong>{row.customer_name}</strong>
                 <span className="muted-text">{number(row.purchase_count_recent)}</span>
-                <span className="report-date-cell">{isoToJalaliStr(row.last_purchase_at.slice(0, 10))}</span>
+                <span className="report-date-cell">{timestampToJalaliStr(row.last_purchase_at)}</span>
                 <strong className="metric-badge metric-badge-danger">
                   {number(row.days_since_last_purchase)}
                 </strong>

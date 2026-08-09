@@ -72,6 +72,7 @@ from decimal import ROUND_CEILING, Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.store_time import business_day, business_day_now
 from app.models.entities import (
     Customer,
     CustomerPayment,
@@ -122,18 +123,20 @@ def _is_dead_stock(database: Session, product_id: int, *, exclude_sale_id: int |
     time this runs, so without the exclusion every line would look
     "just sold today" and never qualify for the boost it's meant to grant)."""
     query = (
-        select(func.max(func.date(Sale.created_at)))
+        select(func.max(business_day(Sale.created_at)))
         .select_from(SaleItem)
         .join(Sale, Sale.id == SaleItem.sale_id)
         .where(SaleItem.product_id == product_id, Sale.status == DocumentStatus.COMPLETED)
     )
     if exclude_sale_id is not None:
         query = query.where(Sale.id != exclude_sale_id)
-    last_sale_date_str = database.scalar(query)
-    if last_sale_date_str is None:
+    last_sale_date = database.scalar(query)
+    if last_sale_date is None:
         return True
-    cutoff = datetime.now(UTC).date() - timedelta(days=DEAD_STOCK_LOOKBACK_DAYS)
-    return date.fromisoformat(last_sale_date_str) < cutoff
+    cutoff = business_day_now() - timedelta(days=DEAD_STOCK_LOOKBACK_DAYS)
+    # business_day() is typed as a Date and hands back a real date; the old
+    # func.date() returned an ISO string that had to be parsed here.
+    return last_sale_date < cutoff
 
 
 def _last_sale_dates(database: Session, product_ids: list[int]) -> dict[int, date]:
@@ -146,20 +149,20 @@ def _last_sale_dates(database: Session, product_ids: list[int]) -> dict[int, dat
     if not product_ids:
         return {}
     rows = database.execute(
-        select(SaleItem.product_id, func.max(func.date(Sale.created_at)))
+        select(SaleItem.product_id, func.max(business_day(Sale.created_at)))
         .select_from(SaleItem)
         .join(Sale, Sale.id == SaleItem.sale_id)
         .where(SaleItem.product_id.in_(product_ids), Sale.status == DocumentStatus.COMPLETED)
         .group_by(SaleItem.product_id)
     ).all()
-    return {product_id: date.fromisoformat(last_date_str) for product_id, last_date_str in rows}
+    return {product_id: last_date for product_id, last_date in rows}
 
 
 def _is_dead_stock_from_map(last_sale_dates: dict[int, date], product_id: int) -> bool:
     last_sale_date = last_sale_dates.get(product_id)
     if last_sale_date is None:
         return True
-    cutoff = datetime.now(UTC).date() - timedelta(days=DEAD_STOCK_LOOKBACK_DAYS)
+    cutoff = business_day_now() - timedelta(days=DEAD_STOCK_LOOKBACK_DAYS)
     return last_sale_date < cutoff
 
 
@@ -459,7 +462,7 @@ def reward_suggestions(
     cart.
     """
     sweep_expired_points(database, customer)
-    today = datetime.now(UTC).date()
+    today = business_day_now()
     expiry_cutoff = today + timedelta(days=near_expiry_days)
 
     products = database.scalars(
@@ -506,7 +509,7 @@ def reward_catalog(database: Session, *, search: str | None = None) -> list[dict
     general. Still flags is_suggested (near-expiry or dead-stock) so the
     priority items stand out without being the only things listed.
     """
-    today = datetime.now(UTC).date()
+    today = business_day_now()
     expiry_cutoff = today + timedelta(days=NEAR_EXPIRY_DAYS)
 
     query = select(Product).where(Product.is_active.is_(True), Product.stock_quantity > 0)

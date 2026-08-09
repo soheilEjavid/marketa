@@ -38,7 +38,7 @@ import { useI18n } from "../i18n";
 import { calculateInvoiceMargin, calculateMarginPct, formatMarginPct, getMarginStatus } from "../lib/margin";
 import { canManageExpenses } from "../permissions";
 import { getSession } from "../session";
-import { getJalaliMonthDays, isoToJalaliStr, parseJalaliDateString, todayJalali, toGregorian } from "../utils/jalali";
+import { getJalaliMonthDays, isoToJalaliStr, localIsoDate, parseJalaliDateString, timestampToJalaliStr, timestampToLocalTime, toGregorian, todayJalali } from "../utils/jalali";
 import type {
   CashierPerformanceRow,
   CashierShift,
@@ -376,9 +376,9 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
   const [cashierFromDate, setCashierFromDate] = useState(() => {
     const date = new Date();
     date.setDate(date.getDate() - 30);
-    return date.toISOString().slice(0, 10);
+    return localIsoDate(date);
   });
-  const [cashierToDate, setCashierToDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [cashierToDate, setCashierToDate] = useState(() => localIsoDate());
 
   const loadCashierData = useCallback(async () => {
     setCashierLoading(true);
@@ -558,7 +558,7 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
                     onClick={() => setViewingSaleId(sale.id)}
                   >
                     <span>{sale.invoice_number}</span>
-                    <span className="report-date-cell">{isoToJalaliStr(sale.created_at.slice(0, 10))}</span>
+                    <span className="report-date-cell">{timestampToJalaliStr(sale.created_at)}</span>
                     <strong>{renderMoney(Number(sale.total))}</strong>
                     <span>
                       {margin.marginPct === null ? (
@@ -1234,10 +1234,10 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
                   return (
                     <div className="report-table-row shift-history-columns animated-line" key={shift.id}>
                       <strong>{shift.cashier_name}</strong>
-                      <span className="muted-text">{isoToJalaliStr(shift.opened_at.slice(0, 10))} {shift.opened_at.slice(11, 16)}</span>
+                      <span className="muted-text">{timestampToJalaliStr(shift.opened_at)} {timestampToLocalTime(shift.opened_at)}</span>
                       <span className="muted-text">
                         {shift.closed_at
-                          ? `${isoToJalaliStr(shift.closed_at.slice(0, 10))} ${shift.closed_at.slice(11, 16)}`
+                          ? `${timestampToJalaliStr(shift.closed_at)} ${timestampToLocalTime(shift.closed_at)}`
                           : t("openShiftBadge")}
                       </span>
                       <span>{renderMoney(Number(shift.opening_cash))}</span>

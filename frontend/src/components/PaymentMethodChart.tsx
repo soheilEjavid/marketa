@@ -3,6 +3,7 @@ import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recha
 import { getPaymentMethodBreakdown } from "../api";
 import { useI18n } from "../i18n";
 import type { PaymentMethodBreakdownRow } from "../types";
+import { localIsoDate } from "../utils/jalali";
 
 type Period = "this-week" | "this-month" | "last-30";
 
@@ -20,7 +21,7 @@ const COLORS: Record<string, string> = {
 
 function periodRange(period: Period): { fromDate: string; toDate: string } {
   const today = new Date();
-  const toDate = today.toISOString().slice(0, 10);
+  const toDate = localIsoDate(today);
   const from = new Date(today);
   if (period === "this-month") {
     from.setDate(1);
@@ -29,7 +30,7 @@ function periodRange(period: Period): { fromDate: string; toDate: string } {
   } else {
     from.setDate(from.getDate() - 6);
   }
-  return { fromDate: from.toISOString().slice(0, 10), toDate };
+  return { fromDate: localIsoDate(from), toDate };
 }
 
 type PaymentMethodChartProps = {

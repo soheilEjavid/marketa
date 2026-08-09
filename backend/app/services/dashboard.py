@@ -2,12 +2,17 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from app.core.store_time import business_day, business_day_bounds, business_day_now
 from app.models.entities import Customer, CustomerPayment, DocumentStatus, Product, Sale, SaleItem, Supplier
 
 def get_summary(database: Session) -> dict:
-    today = datetime.now(UTC).date()
-    today_start = datetime.combine(today, datetime.min.time(), tzinfo=UTC)
-    today_sales, today_transactions = database.execute(select(func.coalesce(func.sum(Sale.total), 0), func.count(Sale.id)).where(Sale.status == DocumentStatus.COMPLETED, Sale.created_at >= today_start)).one()
+    today = business_day_now()
+    # Half-open [start, end) over the raw column, so "today's sales" runs on
+    # the index instead of computing a trading day for every row in the
+    # table. business_day_bounds() puts those two instants where the shop's
+    # own clock says the day begins and ends.
+    today_start, today_end = business_day_bounds(today)
+    today_sales, today_transactions = database.execute(select(func.coalesce(func.sum(Sale.total), 0), func.count(Sale.id)).where(Sale.status == DocumentStatus.COMPLETED, Sale.created_at >= today_start, Sale.created_at < today_end)).one()
     active_products = database.scalar(select(func.count(Product.id)).where(Product.is_active.is_(True))) or 0
     low_stock_products = database.scalar(select(func.count(Product.id)).where(Product.is_active.is_(True), Product.stock_quantity <= Product.low_stock_threshold)) or 0
     receivables = database.scalar(select(func.coalesce(func.sum(Customer.balance), 0))) or Decimal('0')
@@ -24,19 +29,19 @@ def get_summary(database: Session) -> dict:
     # Seven days of sales and profit, in two grouped queries rather than the
     # fourteen this used to run one day at a time — that loop made
     # /dashboard/summary the slowest endpoint in the app.
-    window_start = datetime.combine(today - timedelta(days=6), datetime.min.time(), tzinfo=UTC)
-    window_end = datetime.combine(today, datetime.max.time(), tzinfo=UTC)
+    window_start, _ = business_day_bounds(today - timedelta(days=6))
+    _, window_end = business_day_bounds(today)
 
     sales_by_day = {
         row[0]: row[1]
         for row in database.execute(
-            select(func.date(Sale.created_at), func.coalesce(func.sum(Sale.total), 0))
+            select(business_day(Sale.created_at), func.coalesce(func.sum(Sale.total), 0))
             .where(
                 Sale.status == DocumentStatus.COMPLETED,
                 Sale.created_at >= window_start,
-                Sale.created_at <= window_end,
+                Sale.created_at < window_end,
             )
-            .group_by(func.date(Sale.created_at))
+            .group_by(business_day(Sale.created_at))
         ).all()
     }
 
@@ -50,28 +55,28 @@ def get_summary(database: Session) -> dict:
         row[0]: row[1]
         for row in database.execute(
             select(
-                func.date(Sale.created_at),
+                business_day(Sale.created_at),
                 func.coalesce(func.sum(SaleItem.line_total - (SaleItem.cost_price * SaleItem.quantity)), 0),
             )
             .join(Sale, Sale.id == SaleItem.sale_id)
             .where(
                 Sale.status == DocumentStatus.COMPLETED,
                 Sale.created_at >= window_start,
-                Sale.created_at <= window_end,
+                Sale.created_at < window_end,
             )
-            .group_by(func.date(Sale.created_at))
+            .group_by(business_day(Sale.created_at))
         ).all()
     }
     invoice_discount_by_day = {
         row[0]: row[1]
         for row in database.execute(
-            select(func.date(Sale.created_at), func.coalesce(func.sum(Sale.discount), 0))
+            select(business_day(Sale.created_at), func.coalesce(func.sum(Sale.discount), 0))
             .where(
                 Sale.status == DocumentStatus.COMPLETED,
                 Sale.created_at >= window_start,
-                Sale.created_at <= window_end,
+                Sale.created_at < window_end,
             )
-            .group_by(func.date(Sale.created_at))
+            .group_by(business_day(Sale.created_at))
         ).all()
     }
 
@@ -79,11 +84,13 @@ def get_summary(database: Session) -> dict:
     profit_trend = []
     for days_ago in range(6, -1, -1):
         day = today - timedelta(days=days_ago)
-        key = day.isoformat()
-        trend.append({"date": day, "sales": sales_by_day.get(key, Decimal('0'))})
+        # business_day() is typed as a Date, so these come back as real date
+        # objects — the old func.date() handed back ISO strings and this
+        # looked them up with day.isoformat().
+        trend.append({"date": day, "sales": sales_by_day.get(day, Decimal('0'))})
         profit_trend.append({
             "date": day,
-            "profit": Decimal(str(item_profit_by_day.get(key, 0)))
-            - Decimal(str(invoice_discount_by_day.get(key, 0))),
+            "profit": Decimal(str(item_profit_by_day.get(day, 0)))
+            - Decimal(str(invoice_discount_by_day.get(day, 0))),
         })
     return {"today_sales": today_sales, "today_transactions": today_transactions, "active_products": active_products, "low_stock_products": low_stock_products, "total_receivables": receivables, "total_payables": payables, "top_debtors": [{"customer_id": row.id, "customer_name": row.full_name, "phone": row.phone, "balance": row.balance} for row in debtors], "recent_customer_activity": activities[:8], "sales_trend": trend, "profit_trend": profit_trend}

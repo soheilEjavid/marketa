@@ -25,13 +25,14 @@ import { useI18n } from "../i18n";
 import type { DashboardSummary, NearExpiryRow, Product } from "../types";
 import { getStockStatus } from "../lib/stockStatus";
 import { loadWidgetVisibility, saveWidgetVisibility, type WidgetId } from "../lib/dashboardWidgets";
+import { localIsoDate } from "../utils/jalali";
 
 type DashboardProps = {
   onNavigate: (page: Page) => void;
 };
 
 function isoDate(date: Date): string {
-  return date.toISOString().slice(0, 10);
+  return localIsoDate(date);
 }
 
 function shiftedDate(base: Date, days: number): Date {

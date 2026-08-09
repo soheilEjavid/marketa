@@ -89,6 +89,42 @@ export function isoToJalaliStr(isoDate: string): string | null {
   return formatJalali(jy, jm, jd);
 }
 
+/**
+ * Convert an API *timestamp* (an instant, e.g. `"2026-08-04T22:58:00Z"`) to a
+ * Jalali date string in the viewer's own time zone.
+ *
+ * Not the same job as `isoToJalaliStr`, which takes a calendar date somebody
+ * typed — a birthday, a cheque's due date — and has no time zone to speak of.
+ * Slicing the first ten characters off a timestamp and passing them there
+ * reads the UTC day as if it were the local one, which for a Tehran shop
+ * files everything rung up after midnight under the day before.
+ */
+export function timestampToJalaliStr(isoTimestamp: string): string | null {
+  const parsed = new Date(isoTimestamp);
+  if (isNaN(parsed.getTime())) return null;
+  return dateToJalaliStr(parsed);
+}
+
+/**
+ * The local clock time of an API timestamp, as `"HH:MM"`.
+ */
+export function timestampToLocalTime(isoTimestamp: string): string {
+  const parsed = new Date(isoTimestamp);
+  if (isNaN(parsed.getTime())) return "";
+  return `${String(parsed.getHours()).padStart(2, "0")}:${String(parsed.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * Today as `"YYYY-MM-DD"` on the *local* calendar.
+ *
+ * `new Date().toISOString().slice(0, 10)` gives the UTC day, which is a
+ * different day from the shopkeeper's for the first few hours of theirs —
+ * so a report defaulting to "today" asked the API for yesterday.
+ */
+export function localIsoDate(date: Date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 // ─── Format / Parse ──────────────────────────────────────────────────────────
 
 /**
