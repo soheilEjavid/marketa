@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -82,6 +82,14 @@ function lineUnitPrice(line: CartLine): number {
 
 export function Sales() {
   const { money, number, t } = useI18n();
+  /**
+   * The scanner is a keyboard: it types the barcode and presses Enter, into
+   * whatever happens to have focus. So the search box has to *hold* focus
+   * between scans — a cashier working a queue never touches the mouse, and
+   * a scan that lands in a discount box or nowhere at all is worse than no
+   * scanner, because it looks like it worked.
+   */
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -150,6 +158,25 @@ export function Sales() {
   useEffect(() => {
     if (tab === "checkout") loadHeldSales();
   }, [tab]);
+
+  /** Hand the keyboard back to the scanner. */
+  const focusSearch = useCallback(() => {
+    // A frame later, so it wins against whatever is closing: a modal
+    // restoring focus to its trigger, a freshly-rendered cart line, the
+    // autoFocus on a discount box.
+    requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, []);
+
+  // Ready to scan the moment the checkout is on screen, and again whenever
+  // the thing that took the keyboard away has finished: a receipt printed, a
+  // credit-limit warning dismissed, a loyalty prompt closed, a held sale
+  // resumed. Each of these ends with the cashier facing an empty or reloaded
+  // cart and the next customer already putting things on the counter.
+  useEffect(() => {
+    if (tab !== "checkout") return;
+    if (receipt || creditLimitError || loyaltyPrompt || viewingSaleId) return;
+    focusSearch();
+  }, [tab, receipt, creditLimitError, loyaltyPrompt, viewingSaleId, focusSearch]);
 
   const filteredProducts = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -292,6 +319,46 @@ export function Sales() {
         { product, quantity: 1, priceTier: product.is_dual_priced ? "old" : undefined },
       ];
     });
+    // Clicking a tile leaves the keyboard on that button, so the next scan
+    // would go nowhere. Put it back regardless of how the item was added.
+    focusSearch();
+  }
+
+  /**
+   * Enter in the search box. A barcode scanner is just a keyboard that types
+   * fast and finishes with Enter, so the only thing that tells a scan apart
+   * from a cashier typing is that the text is *exactly* somebody's barcode.
+   * That is enough, and it is reliable — unlike timing the keystrokes, which
+   * guesses at hardware and gets it wrong on a slow USB hub or a fast typist.
+   *
+   * An exact hit adds the product and clears the box for the next scan.
+   * Anything else falls through to the filtered grid exactly as before, so
+   * typing part of a product name still works the way it always has.
+   */
+  function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== "Enter") return;
+    const scanned = query.trim();
+    if (!scanned) return;
+
+    const matches = products.filter((product) => product.barcode === scanned);
+    if (matches.length === 0) return; // not a barcode — leave the grid filtered
+
+    event.preventDefault();
+
+    // Barcodes are unique in the database, so this is a "cannot happen" —
+    // which is exactly why it must not silently pick one and charge for the
+    // wrong thing. Name them and let the cashier choose from the grid.
+    if (matches.length > 1) {
+      setStatus("error");
+      setMessage(`${t("duplicateBarcodeWarning")} ${matches.map((p) => p.name).join("، ")}`);
+      return;
+    }
+
+    // Straight through addProduct, so the scan path inherits its stock rules
+    // rather than growing a second copy of them.
+    addProduct(matches[0]);
+    setQuery("");
+    focusSearch();
   }
 
   function setPriceTier(productId: number, tier: "old" | "new") {
@@ -652,9 +719,12 @@ export function Sales() {
           <label className="search-field">
             <Search size={18} />
             <input
+              ref={searchInputRef}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder={t("searchProducts")}
+              onKeyDown={handleSearchKeyDown}
+              placeholder={t("searchOrScan")}
+              autoComplete="off"
             />
           </label>
           <div className="product-grid">
