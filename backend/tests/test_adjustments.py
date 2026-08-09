@@ -139,13 +139,38 @@ def test_return_purchase_items_raises_on_negative_stock() -> None:
     Base.metadata.create_all(engine)
 
     with Session(engine) as database:
-        rice = create_product(database, name="Rice", stock="2")
+        rice = create_product(database, name="Rice", stock="0")
         purchase = process_purchase(
             database,
             PurchaseCreate(
-                confirm_dual_pricing=True,  # see the note in the test above
+                items=[PurchaseItemCreate(product_id=rice.id, quantity=Decimal("5"), unit_cost=Decimal("8"))]
+            ),
+        )
+        # Most of the delivery has already been sold on, so the invoice still
+        # says five but the shelf cannot give three back. The line-quantity
+        # check passes here; this is specifically the stock guard's job.
+        process_sale(
+            database,
+            SaleCreate(items=[SaleItemCreate(product_id=rice.id, quantity=Decimal("4"))]),
+        )
+        with pytest.raises(AdjustmentError, match="Insufficient stock"):
+            return_purchase_items(database, purchase.id, [{"product_id": rice.id, "quantity": Decimal("3")}])
+
+        database.refresh(rice)
+        assert rice.stock_quantity == Decimal("1.000")
+
+
+def test_return_purchase_items_rejects_more_than_the_invoice_carried() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as database:
+        rice = create_product(database, name="Rice", stock="0")
+        purchase = process_purchase(
+            database,
+            PurchaseCreate(
                 items=[PurchaseItemCreate(product_id=rice.id, quantity=Decimal("1"), unit_cost=Decimal("8"))]
             ),
         )
-        with pytest.raises(AdjustmentError, match="Insufficient stock"):
+        with pytest.raises(AdjustmentError, match="only"):
             return_purchase_items(database, purchase.id, [{"product_id": rice.id, "quantity": Decimal("10")}])

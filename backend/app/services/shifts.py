@@ -77,6 +77,11 @@ def close_shift(
             Sale.shift_id == shift.id,
             Sale.status == DocumentStatus.COMPLETED,
             SalePaymentLine.method == PaymentMethod.CASH,
+            # Money in only. A refund line is negative and belongs to the
+            # shift that handed the cash back, which is rarely the shift that
+            # took it — it is matched by timestamp below with the other
+            # cash-out sources instead.
+            SalePaymentLine.amount > 0,
         )
     ) or Decimal("0")
 
@@ -138,7 +143,21 @@ def close_shift(
         )
     ) or Decimal("0")
 
-    cash_out_total = cash_supplier_payments + cash_expenses + cash_salaries
+    # Cash handed back over the counter for returned goods (see
+    # services/adjustments.py::return_sale_items, which records the refund as
+    # a negative CASH payment line). A customer can bring yesterday's milk
+    # back today, so this is matched on when the refund was paid, not on
+    # which shift sold the goods — the same reasoning as the three sources
+    # above, and the reason cash_sales_total filters to positive lines only.
+    cash_refunds = database.scalar(
+        select(func.coalesce(func.sum(-SalePaymentLine.amount), 0)).where(
+            SalePaymentLine.method == PaymentMethod.CASH,
+            SalePaymentLine.amount < 0,
+            *cash_out_conditions(SalePaymentLine.paid_at),
+        )
+    ) or Decimal("0")
+
+    cash_out_total = cash_supplier_payments + cash_expenses + cash_salaries + cash_refunds
 
     expected_cash = (
         shift.opening_cash + cash_sales_total + cash_customer_payments - cash_out_total
