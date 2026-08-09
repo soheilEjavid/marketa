@@ -67,7 +67,16 @@ def close_shift(
     if shift.status != ShiftStatus.OPEN:
         raise ShiftError("Shift is already closed")
 
-    closed_at = datetime.now(UTC)
+    # A wall clock can go backwards. NTP disciplines it, a VM resumes from
+    # suspend, WSL resyncs with its host — and then the moment we are closing
+    # in reads as *earlier* than the moment the shift opened. That really
+    # happens on ordinary shop hardware, not just in theory.
+    #
+    # Nothing below uses this as the upper edge of a window any more (see the
+    # queries), but it is still stored on the row, and a shift that closed
+    # before it opened is a nonsense a report would have to cope with. Clamp
+    # it so the record stays coherent.
+    closed_at = max(datetime.now(UTC), shift.opened_at)
 
     cash_sales_total = database.scalar(
         select(func.coalesce(func.sum(SalePaymentLine.amount), 0))
@@ -92,12 +101,29 @@ def close_shift(
     # `paid_at >= shift.opened_at` silently drops rows from the same
     # instant the shift opened. Wrapping both sides in func.datetime(...)
     # normalizes them to the same canonical string before comparing.
+    #
+    # There is deliberately no upper bound. This runs at the instant of
+    # closing, so "recorded since the shift opened" already means "recorded
+    # during this shift" — nothing can arrive later, only one shift is ever
+    # open at a time, and the next shift's own lower bound keeps these rows
+    # out of its reconciliation.
+    #
+    # The upper bound used to be `<= closed_at`, and it silently ate money.
+    # closed_at is a wall-clock reading taken at close; when the clock is
+    # corrected backwards between opening and closing — NTP, a VM resuming,
+    # WSL resyncing with its host — every row recorded during the shift
+    # sorts *after* it and drops out. Observed in practice: a shift opened
+    # at 12:43:51 closed at 12:41:51, and 50,000 of cash paid out over the
+    # counter vanished from the reconciliation, showing the drawer 50,000
+    # richer than it was. A shopkeeper cannot debug that.
+    def since_shift_opened(column):
+        return (func.datetime(column) >= func.datetime(shift.opened_at),)
+
     cash_customer_payments = database.scalar(
         select(func.coalesce(func.sum(CustomerPayment.amount), 0)).where(
             CustomerPayment.method == PaymentMethod.CASH,
             CustomerPayment.sale_id.is_(None),
-            func.datetime(CustomerPayment.paid_at) >= func.datetime(shift.opened_at),
-            func.datetime(CustomerPayment.paid_at) <= func.datetime(closed_at),
+            *since_shift_opened(CustomerPayment.paid_at),
         )
     ) or Decimal("0")
 
@@ -117,29 +143,24 @@ def close_shift(
     # go. The trade-off: an expense back-dated days later is attributed to
     # the shift it was *entered* in. That is visible and correctable;
     # silently double-counting would not be.
-    cash_out_conditions = lambda column: (  # noqa: E731 - local shorthand
-        func.datetime(column) >= func.datetime(shift.opened_at),
-        func.datetime(column) <= func.datetime(closed_at),
-    )
-
     cash_supplier_payments = database.scalar(
         select(func.coalesce(func.sum(SupplierPayment.amount), 0)).where(
             SupplierPayment.method == PaymentMethod.CASH,
-            *cash_out_conditions(SupplierPayment.paid_at),
+            *since_shift_opened(SupplierPayment.paid_at),
         )
     ) or Decimal("0")
 
     cash_expenses = database.scalar(
         select(func.coalesce(func.sum(Expense.amount), 0)).where(
             Expense.payment_method == ExpensePaymentMethod.CASH,
-            *cash_out_conditions(Expense.created_at),
+            *since_shift_opened(Expense.created_at),
         )
     ) or Decimal("0")
 
     cash_salaries = database.scalar(
         select(func.coalesce(func.sum(SalaryPayment.net_amount), 0)).where(
             SalaryPayment.payment_method == ExpensePaymentMethod.CASH,
-            *cash_out_conditions(SalaryPayment.paid_at),
+            *since_shift_opened(SalaryPayment.paid_at),
         )
     ) or Decimal("0")
 
@@ -153,7 +174,7 @@ def close_shift(
         select(func.coalesce(func.sum(-SalePaymentLine.amount), 0)).where(
             SalePaymentLine.method == PaymentMethod.CASH,
             SalePaymentLine.amount < 0,
-            *cash_out_conditions(SalePaymentLine.paid_at),
+            *since_shift_opened(SalePaymentLine.paid_at),
         )
     ) or Decimal("0")
 
