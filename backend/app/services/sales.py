@@ -151,9 +151,10 @@ def _build_sale_items(
         )
         product.stock_quantity -= item_data.quantity
 
-        # Decrement old-stock estimate if old tier selected
+        # commit=False: this runs inside process_sale()'s single
+        # transaction, and the InventoryTransaction below is not added yet.
         if price_tier == "old":
-            decrement_old_stock_estimate(database, product)
+            decrement_old_stock_estimate(database, product, commit=False)
 
         database.add(
             InventoryTransaction(

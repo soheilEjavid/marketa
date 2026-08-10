@@ -189,10 +189,24 @@ def collapse_dual_pricing(
     return product
 
 
-def decrement_old_stock_estimate(database: Session, product: Product) -> None:
-    """Decrement the informational old-stock estimate by 1 (clamped at 0)."""
+def decrement_old_stock_estimate(
+    database: Session, product: Product, *, commit: bool = True
+) -> None:
+    """Decrement the informational old-stock estimate by 1 (clamped at 0).
+
+    `commit=False` is required whenever this is called from inside a larger
+    transaction — same convention as financials.record_customer_payment().
+    Committing here mid-sale used to persist the caller's half-built sale:
+    _build_sale_items() adds the SaleItem and decrements stock *before*
+    calling this, and only adds the matching InventoryTransaction *after*,
+    so a commit in between wrote the stock change to disk while its ledger
+    row was still pending and got rolled back with the rest of the failed
+    sale. That left stock silently missing with nothing to explain it, plus
+    an orphan `completed` invoice with a zero total.
+    """
     if product.is_dual_priced and product.old_price_stock_estimate is not None:
         product.old_price_stock_estimate = max(0, product.old_price_stock_estimate - 1)
-        database.commit()
-        database.refresh(product)
+        if commit:
+            database.commit()
+            database.refresh(product)
 
