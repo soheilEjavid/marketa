@@ -6,7 +6,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.models.base import Base
-from app.models.entities import DocumentStatus, Expense, ExpensePaymentMethod, PaymentMethod, Sale, SaleItem, User
+from app.models.entities import (
+    DocumentStatus,
+    Expense,
+    ExpensePaymentMethod,
+    PaymentMethod,
+    Product,
+    Sale,
+    SaleItem,
+    User,
+)
 from app.schemas.expense import ExpenseCreate, SalaryAdvanceCreate, SalaryPaymentCreate
 from app.services.expenses import (
     DuplicateSalaryPaymentError,
@@ -26,9 +35,30 @@ def _make_employee(database: Session, username: str = "cashier1") -> User:
     return employee
 
 
+def _get_product(database: Session) -> Product:
+    """A real Product for sale lines to point at. The figures below never
+    read it — the hand calculation uses each SaleItem's own unit_price and
+    cost_price — but the foreign key is enforced, so the row has to exist."""
+    product = database.query(Product).first()
+    if product is None:
+        product = Product(
+            name="Test product",
+            purchase_price=Decimal("0"),
+            sale_price=Decimal("0"),
+            stock_quantity=Decimal("0"),
+            low_stock_threshold=Decimal("0"),
+            is_active=True,
+        )
+        database.add(product)
+        database.commit()
+        database.refresh(product)
+    return product
+
+
 def _make_sale(database: Session, *, quantity: str, unit_price: str, cost_price: str, when: datetime) -> None:
     qty, price, cost = Decimal(quantity), Decimal(unit_price), Decimal(cost_price)
     revenue = qty * price
+    product = _get_product(database)
     sale = Sale(
         invoice_number=f"EXP-{when.isoformat()}",
         status=DocumentStatus.COMPLETED,
@@ -42,7 +72,7 @@ def _make_sale(database: Session, *, quantity: str, unit_price: str, cost_price:
     database.add(
         SaleItem(
             sale_id=sale.id,
-            product_id=1,  # no Product row needed — daily_sales_summary never joins Product
+            product_id=product.id,
             quantity=qty,
             unit_price=price,
             cost_price=cost,
