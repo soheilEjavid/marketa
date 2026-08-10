@@ -4,7 +4,6 @@ import {
   ChevronDown,
   History,
   Layers,
-  Minus,
   PauseCircle,
   Plus,
   Search,
@@ -41,6 +40,8 @@ import { QuickAddLoyaltyCustomerButton } from "../components/QuickAddLoyaltyCust
 import { ReceiptView, type ReceiptData } from "../components/ReceiptView";
 import { SalesHistoryTab } from "../components/SalesHistoryTab";
 import { SaleDetailView } from "../components/SaleDetailView";
+import { QuantityInput } from "../components/QuantityInput";
+import { formatQuantity, roundToWeightPrecision } from "../lib/quantity";
 import { getStockStatus } from "../lib/stockStatus";
 
 type PaymentLine = {
@@ -81,7 +82,7 @@ function lineUnitPrice(line: CartLine): number {
 }
 
 export function Sales() {
-  const { money, number, t } = useI18n();
+  const { money, number, t, locale } = useI18n();
   /**
    * The scanner is a keyboard: it types the barcode and presses Enter, into
    * whatever happens to have focus. So the search box has to *hold* focus
@@ -296,6 +297,11 @@ export function Sales() {
     setCart((current) => {
       const existing = current.find((line) => line.product.id === product.id);
       if (existing) {
+        // A weighted product is deliberately not incremented on a repeat
+        // scan: "+1" would mean +1 kg, which is a guess at what is on the
+        // scale, and a wrong one worth real money. The line stays as it is
+        // and the cashier types the weight.
+        if (product.is_weighted) return current;
         if (existing.quantity >= Number(product.stock_quantity)) {
           setStatus("error");
           setMessage(t("insufficientStock"));
@@ -411,18 +417,27 @@ export function Sales() {
     });
   }
 
-  function updateQuantity(productId: number, change: number) {
+  /**
+   * Set a cart line to an absolute quantity, capped at available stock.
+   * Both the counted stepper and the weighted field arrive here — they
+   * differ in how the cashier picks a number, not in what happens to it.
+   *
+   * A line that reaches zero is removed, which is how the stepper has
+   * always cleared a line. A weighted line is exempt: clearing the field
+   * to retype the weight would otherwise delete the line mid-keystroke.
+   */
+  function setLineQuantity(productId: number, quantity: number) {
     setCart((current) =>
       current
         .map((line) => {
           if (line.product.id !== productId) return line;
-          const quantity = Math.min(
-            line.quantity + change,
-            Number(line.product.stock_quantity),
-          );
-          return { ...line, quantity };
+          const capped = Math.min(quantity, Number(line.product.stock_quantity));
+          return {
+            ...line,
+            quantity: line.product.is_weighted ? roundToWeightPrecision(capped) : capped,
+          };
         })
-        .filter((line) => line.quantity > 0),
+        .filter((line) => line.product.is_weighted || line.quantity > 0),
     );
   }
 
@@ -489,6 +504,8 @@ export function Sales() {
         lines: cart.map((line) => ({
           productName: line.product.name,
           quantity: line.quantity,
+          isWeighted: line.product.is_weighted,
+          unit: line.product.unit,
           unitPrice: lineUnitPrice(line),
           discount: line.discount || 0,
           lineTotal: lineUnitPrice(line) * line.quantity - (line.discount || 0),
@@ -764,7 +781,16 @@ export function Sales() {
                       />
                     )}
                   </span>
-                  <small>{t("available")}: {number(Number(product.stock_quantity))}</small>
+                  <small>
+                    {t("available")}:{" "}
+                    {formatQuantity(
+                      Number(product.stock_quantity),
+                      product.is_weighted,
+                      locale,
+                      number,
+                    )}
+                    {product.unit ? ` ${product.unit}` : ""}
+                  </small>
                   <span>
                     {money(
                       Number(
@@ -877,15 +903,14 @@ export function Sales() {
                     )}
                   </span>
                 </div>
-                <div className="quantity-control compact">
-                  <button onClick={() => updateQuantity(line.product.id, -1)}>
-                    <Minus size={12} />
-                  </button>
-                  <span>{number(line.quantity)}</span>
-                  <button onClick={() => updateQuantity(line.product.id, 1)}>
-                    <Plus size={12} />
-                  </button>
-                </div>
+                <QuantityInput
+                  compact
+                  quantity={line.quantity}
+                  isWeighted={line.product.is_weighted}
+                  unit={line.product.unit}
+                  max={Number(line.product.stock_quantity)}
+                  onChange={(quantity) => setLineQuantity(line.product.id, quantity)}
+                />
                 <div className="cart-line-actions">
                   <button
                     type="button"

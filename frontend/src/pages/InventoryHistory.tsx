@@ -3,6 +3,7 @@ import { ArrowDownLeft, ArrowUpRight, RefreshCw } from "lucide-react";
 
 import { getInventoryTransactions } from "../api";
 import { useI18n } from "../i18n";
+import { formatQuantityWithUnit } from "../lib/quantity";
 import type {
   InventoryTransaction,
   InventoryTransactionType,
@@ -83,7 +84,13 @@ export function InventoryHistory() {
               </span>
               <strong className={positive ? "quantity-positive" : "quantity-negative"}>
                 {positive ? "+" : ""}
-                {number(Number(transaction.quantity_change))}
+                {formatQuantityWithUnit(
+                  Number(transaction.quantity_change),
+                  transaction.is_weighted,
+                  transaction.is_weighted ? transaction.unit : null,
+                  locale,
+                  number,
+                )}
               </strong>
               <span>
                 {transaction.related_id

@@ -7,12 +7,14 @@ from sqlalchemy import (
     Date,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -115,6 +117,16 @@ class Product(Base, TimestampMixin):
     min_sale_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     stock_quantity: Mapped[Decimal] = mapped_column(Numeric(14, 3), default=0)
     low_stock_threshold: Mapped[Decimal] = mapped_column(Numeric(14, 3), default=0)
+    # Sold by weight rather than by the piece: the POS asks for a decimal
+    # weight instead of stepping a whole-unit counter, and every quantity
+    # for this product is displayed to three decimals. `unit` (below) is
+    # the label that weight is shown in — کیلوگرم, گرم — and stays a plain
+    # free-text field, because it was already one and shops have already
+    # filled it in. This flag is the behaviour; `unit` is the wording.
+    #
+    # Prices are unchanged in meaning: sale_price/purchase_price are per
+    # one `unit`, exactly as they are for a counted product.
+    is_weighted: Mapped[bool] = mapped_column(Boolean, default=False)
     unit: Mapped[str | None] = mapped_column(String(30))
     packaging_unit_label: Mapped[str | None] = mapped_column(String(40))
     packaging_unit_quantity: Mapped[Decimal | None] = mapped_column(Numeric(14, 3))
@@ -135,7 +147,10 @@ class Product(Base, TimestampMixin):
     is_dual_priced: Mapped[bool] = mapped_column(Boolean, default=False)
     old_purchase_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
     old_sale_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
-    old_price_stock_estimate: Mapped[int | None] = mapped_column(Integer)
+    # Numeric, not Integer: a weighted product's old stock is 4.500 kg, and
+    # this is decremented by the quantity actually sold (see
+    # services/products.py::decrement_old_stock_estimate).
+    old_price_stock_estimate: Mapped[Decimal | None] = mapped_column(Numeric(14, 3))
     dual_price_started_at: Mapped[datetime | None] = mapped_column(UtcDateTime)
 
     category: Mapped[Category | None] = relationship(back_populates="products")
@@ -398,15 +413,33 @@ class SalePaymentLine(Base, TimestampMixin):
 
 class CashierShift(Base, TimestampMixin):
     """A till session: opened by picking a cashier + starting cash float,
-    closed with a counted-cash reconciliation. There is no real login yet
-    (see services/auth.py's DEV_DISABLE_AUTH), so `cashier_id` here — not
-    any request-level identity — is the single source of truth for "who is
-    working the register." Only one shift may be OPEN at a time (enforced
-    in services/shifts.py, not at the DB level, matching this codebase's
-    existing style of Python-level business-rule checks).
+    closed with a counted-cash reconciliation. `cashier_id` here records who
+    is working the register.
+
+    **Only one shift may be OPEN at a time**, and that is now a database
+    constraint rather than only a Python check. services/shifts.py still
+    checks first so the user gets a clean error instead of an IntegrityError,
+    but the check-then-insert there is not atomic and cannot be made so in
+    application code. The rule matters more than most: close_shift() relies
+    on it to justify having no upper time bound on its cash-out queries, and
+    those queries filter on nothing but a timestamp — so two overlapping open
+    shifts would deduct the same cash expense from both of them.
+
+    The predicate matches 'OPEN', not 'open': SQLAlchemy's Enum persists the
+    member *name*, and an index predicate written against the lowercase value
+    would match no row ever and quietly enforce nothing.
     """
 
     __tablename__ = "cashier_shifts"
+    __table_args__ = (
+        Index(
+            "uq_cashier_shifts_single_open",
+            "status",
+            unique=True,
+            sqlite_where=text("status = 'OPEN'"),
+            postgresql_where=text("status = 'OPEN'"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     cashier_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)

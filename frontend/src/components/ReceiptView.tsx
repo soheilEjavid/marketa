@@ -1,11 +1,17 @@
 import type { ReactNode } from "react";
 import { Printer, ShoppingBag } from "lucide-react";
 import { useI18n } from "../i18n";
+import { formatQuantityWithUnit } from "../lib/quantity";
 import { dateToJalaliStr } from "../utils/jalali";
 
 export type ReceiptLine = {
   productName: string;
   quantity: number;
+  /** Weighted lines print to three decimals with their unit — "2.350 کیلوگرم"
+   * — because the customer is being charged for a measurement and needs to
+   * be able to check it against the scale. */
+  isWeighted?: boolean;
+  unit?: string | null;
   unitPrice: number;
   discount: number;
   lineTotal: number;
@@ -34,7 +40,7 @@ type ReceiptViewProps = {
 };
 
 export function ReceiptView({ receipt, onNewSale, extraAction }: ReceiptViewProps) {
-  const { t, money, number } = useI18n();
+  const { t, money, number, locale } = useI18n();
   const createdAt = new Date(receipt.createdAt);
   const dateLabel = `${dateToJalaliStr(createdAt)} ${createdAt.toLocaleTimeString([], {
     hour: "2-digit",
@@ -92,7 +98,15 @@ export function ReceiptView({ receipt, onNewSale, extraAction }: ReceiptViewProp
                     </small>
                   )}
                 </td>
-                <td>{number(line.quantity)}</td>
+                <td>
+                  {formatQuantityWithUnit(
+                    line.quantity,
+                    Boolean(line.isWeighted),
+                    line.isWeighted ? line.unit : null,
+                    locale,
+                    number,
+                  )}
+                </td>
                 <td>{money(line.unitPrice)}</td>
                 <td>{money(line.lineTotal)}</td>
               </tr>

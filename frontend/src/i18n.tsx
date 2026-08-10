@@ -409,6 +409,11 @@ const fa = {
   confirmAnyway: "بله، ادامه بده",
 
   unitOfSale: "واحد فروش",
+  soldByWeight: "فروش وزنی",
+  soldByWeightHint:
+    "صندوق به‌جای دکمه‌های کم و زیاد، وزن را با سه رقم اعشار می‌پرسد. قیمت خرید و فروش برای هر واحد وزن است.",
+  weightLabel: "وزن",
+  enterWeight: "وزن را وارد کنید",
   lowStockThreshold: "آستانه هشدار کمبود موجودی",
   packagingConversion: "تبدیل واحد بسته‌بندی",
   packagingConversionHint: "برای کالاهایی که با کارتن یا بسته خریداری و به‌صورت تکی فروخته می‌شوند.",
@@ -1039,6 +1044,11 @@ const en: Record<string, string> = {
   confirmAnyway: "Yes, continue",
 
   unitOfSale: "Unit of sale",
+  soldByWeight: "Sold by weight",
+  soldByWeightHint:
+    "The till asks for a weight to three decimals instead of stepping whole units. Purchase and sale price are per unit of weight.",
+  weightLabel: "Weight",
+  enterWeight: "Enter the weight",
   lowStockThreshold: "Low-stock alert threshold",
   packagingConversion: "Packaging conversion",
   packagingConversionHint: "For items purchased in cartons/boxes but sold individually.",

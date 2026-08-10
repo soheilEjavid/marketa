@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Minus, Plus, Trash2, X } from "lucide-react";
+import { Trash2, X } from "lucide-react";
 
 import { ApiError, editSale, getProducts } from "../api";
 import { useI18n } from "../i18n";
@@ -7,6 +7,7 @@ import type { Product, Sale } from "../types";
 import { Modal } from "./Modal";
 import { ProductCombobox } from "./ProductCombobox";
 import { AmountInput } from "./AmountInput";
+import { QuantityInput } from "./QuantityInput";
 
 type SaleEditFormProps = {
   sale: Sale;
@@ -46,6 +47,7 @@ export function SaleEditForm({ sale, onClose, onSaved }: SaleEditFormProps) {
               purchase_price: "0",
               stock_quantity: "0",
               is_dual_priced: false,
+              is_weighted: false,
             } as Product;
             return {
               id: item.id,
@@ -83,6 +85,9 @@ export function SaleEditForm({ sale, onClose, onSaved }: SaleEditFormProps) {
     setLines((current) => {
       const existingIndex = current.findIndex((line) => line.product.id === product.id);
       if (existingIndex !== -1) {
+        // Same reasoning as the POS: +1 on a weighted line would mean
+        // +1 kg, which nobody asked for. Leave it for the weight field.
+        if (product.is_weighted) return current;
         return current.map((line, i) =>
           i === existingIndex ? { ...line, quantity: line.quantity + 1 } : line,
         );
@@ -176,18 +181,20 @@ export function SaleEditForm({ sale, onClose, onSaved }: SaleEditFormProps) {
                       />
                     </div>
                   </div>
-                  <div className="quantity-control">
-                    <button
-                      type="button"
-                      onClick={() => updateLine(line.id, index, { quantity: Math.max(1, line.quantity - 1) })}
-                    >
-                      <Minus size={14} />
-                    </button>
-                    <span>{number(line.quantity)}</span>
-                    <button type="button" onClick={() => updateLine(line.id, index, { quantity: line.quantity + 1 })}>
-                      <Plus size={14} />
-                    </button>
-                  </div>
+                  <QuantityInput
+                    quantity={line.quantity}
+                    isWeighted={line.product.is_weighted}
+                    unit={line.product.unit}
+                    onChange={(quantity) =>
+                      updateLine(line.id, index, {
+                        // The stepper must not walk a line down to zero here
+                        // — removing a line is what the bin button is for.
+                        quantity: line.product.is_weighted
+                          ? quantity
+                          : Math.max(1, quantity),
+                      })
+                    }
+                  />
                   <button
                     type="button"
                     className="icon-button danger"

@@ -4,6 +4,7 @@ import { ArrowLeft, History, Pencil, Printer } from "lucide-react";
 import { getAuditLogs, getCustomers, getProducts, getSale } from "../api";
 import { useI18n } from "../i18n";
 import { calculateInvoiceMargin, calculateMarginPct, formatMarginPct, getMarginStatus } from "../lib/margin";
+import { formatQuantityWithUnit } from "../lib/quantity";
 import { canEditSale } from "../permissions";
 import { getSession } from "../session";
 import type { AuditLogEntry, Sale } from "../types";
@@ -28,6 +29,12 @@ export function SaleDetailView({ saleId, onBack }: SaleDetailViewProps) {
   const [sale, setSale] = useState<Sale | null>(null);
   const [customerName, setCustomerName] = useState<string | null>(null);
   const [productNames, setProductNames] = useState<Record<number, string>>({});
+  // Weighted lines need their unit and precision to render as a
+  // measurement; SaleItemRead carries neither, so both come from the
+  // product list this view already fetches for the names.
+  const [productUnits, setProductUnits] = useState<
+    Record<number, { isWeighted: boolean; unit: string | null }>
+  >({});
   const [history, setHistory] = useState<AuditLogEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -46,6 +53,11 @@ export function SaleDetailView({ saleId, onBack }: SaleDetailViewProps) {
         setSale(saleData);
         setHistory(logs);
         setProductNames(Object.fromEntries(products.map((p) => [p.id, p.name])));
+        setProductUnits(
+          Object.fromEntries(
+            products.map((p) => [p.id, { isWeighted: p.is_weighted, unit: p.unit }]),
+          ),
+        );
         if (saleData.customer_id) {
           getCustomers()
             .then((customers) => {
@@ -145,7 +157,17 @@ export function SaleDetailView({ saleId, onBack }: SaleDetailViewProps) {
                         </small>
                       )}
                     </td>
-                    <td>{number(Number(item.quantity))}</td>
+                    <td>
+                      {formatQuantityWithUnit(
+                        Number(item.quantity),
+                        productUnits[item.product_id]?.isWeighted ?? false,
+                        productUnits[item.product_id]?.isWeighted
+                          ? productUnits[item.product_id]?.unit
+                          : null,
+                        locale,
+                        number,
+                      )}
+                    </td>
                     <td>{money(Number(item.unit_price))}</td>
                     <td>{Number(item.discount) > 0 ? money(Number(item.discount)) : "—"}</td>
                     <td className="muted-text">{money(Number(item.cost_price))}</td>

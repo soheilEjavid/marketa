@@ -116,7 +116,7 @@ def enable_dual_pricing(
     new_purchase_price: Decimal,
     new_sale_price: Decimal,
     *,
-    old_price_stock_estimate: int | None = None,
+    old_price_stock_estimate: Decimal | None = None,
     user_id: int | None = None,
     username: str | None = None,
 ) -> Product:
@@ -190,9 +190,15 @@ def collapse_dual_pricing(
 
 
 def decrement_old_stock_estimate(
-    database: Session, product: Product, *, commit: bool = True
+    database: Session, product: Product, quantity: Decimal, *, commit: bool = True
 ) -> None:
-    """Decrement the informational old-stock estimate by 1 (clamped at 0).
+    """Draw `quantity` down from the informational old-stock estimate.
+
+    `quantity` is what was actually sold on the old tier. This used to
+    subtract a flat 1 per invoice *line* regardless — selling 5 of something
+    moved the estimate by 1, so the figure drifted further from reality with
+    every multi-unit sale and always read high. For a weighted product it
+    could not work at all: 2.350 kg does not round to "one".
 
     `commit=False` is required whenever this is called from inside a larger
     transaction — same convention as financials.record_customer_payment().
@@ -205,7 +211,9 @@ def decrement_old_stock_estimate(
     an orphan `completed` invoice with a zero total.
     """
     if product.is_dual_priced and product.old_price_stock_estimate is not None:
-        product.old_price_stock_estimate = max(0, product.old_price_stock_estimate - 1)
+        product.old_price_stock_estimate = max(
+            Decimal("0"), Decimal(product.old_price_stock_estimate) - quantity
+        )
         if commit:
             database.commit()
             database.refresh(product)

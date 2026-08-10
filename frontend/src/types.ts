@@ -9,6 +9,8 @@ export type Product = {
   min_sale_price: string | null;
   stock_quantity: string;
   low_stock_threshold: string;
+  /** Sold by weight: the POS asks for a decimal weight, not a unit count. */
+  is_weighted: boolean;
   unit: string | null;
   packaging_unit_label: string | null;
   packaging_unit_quantity: string | null;
@@ -41,6 +43,7 @@ export type ProductInput = {
   min_sale_price?: number | null;
   stock_quantity: number;
   low_stock_threshold?: number;
+  is_weighted?: boolean;
   unit?: string | null;
   packaging_unit_label?: string | null;
   packaging_unit_quantity?: number | null;
@@ -61,6 +64,7 @@ export type ProductUpdate = {
   sale_price?: number;
   min_sale_price?: number | null;
   low_stock_threshold?: number;
+  is_weighted?: boolean;
   unit?: string | null;
   packaging_unit_label?: string | null;
   packaging_unit_quantity?: number | null;
@@ -513,6 +517,8 @@ export type InventoryTransaction = {
   id: number;
   product_id: number;
   product_name: string;
+  is_weighted: boolean;
+  unit: string | null;
   quantity_change: string;
   transaction_type: InventoryTransactionType;
   related_id: number | null;

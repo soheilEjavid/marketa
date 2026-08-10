@@ -82,6 +82,7 @@ export function ProductFormModal({
   const [salePrice, setSalePrice] = useState(product?.sale_price ?? "");
   const [minSalePrice, setMinSalePrice] = useState(toInputString(product?.min_sale_price));
   const [unit, setUnit] = useState(toInputString(product?.unit));
+  const [isWeighted, setIsWeighted] = useState(product?.is_weighted ?? false);
   const [stockQuantity, setStockQuantity] = useState(product?.stock_quantity ?? "0");
   const [lowStockThreshold, setLowStockThreshold] = useState(toInputString(product?.low_stock_threshold) || "0");
   const [packagingUnitLabel, setPackagingUnitLabel] = useState(toInputString(product?.packaging_unit_label));
@@ -258,6 +259,7 @@ export function ProductFormModal({
         sale_price: Number(salePrice),
         min_sale_price: minSalePrice.trim() ? Number(minSalePrice) : null,
         low_stock_threshold: Number(lowStockThreshold) || 0,
+        is_weighted: isWeighted,
         unit: unit.trim() || null,
         packaging_unit_label: packagingUnitLabel.trim() || null,
         packaging_unit_quantity: packagingUnitQuantity.trim() ? Number(packagingUnitQuantity) : null,
@@ -603,6 +605,23 @@ export function ProductFormModal({
                     ))}
                   </datalist>
                 </label>
+
+                <label className="checkbox-field full-span">
+                  <input
+                    type="checkbox"
+                    checked={isWeighted}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setIsWeighted(checked);
+                      // Turning this on with no unit named would leave the
+                      // till showing a bare "2.350". Kilogram is the near
+                      // universal case; anything already typed is kept.
+                      if (checked && !unit.trim()) setUnit(t("unitKg"));
+                    }}
+                  />
+                  <span>{t("soldByWeight")}</span>
+                </label>
+                <small className="field-hint full-span">{t("soldByWeightHint")}</small>
 
                 <label className="field">
                   <span>{t("lowStockThreshold")}</span>

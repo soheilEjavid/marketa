@@ -1032,6 +1032,27 @@ h2 { font-size: 21px; }
 .quantity-control.compact { gap: 4px; }
 .quantity-control.compact button { width: 22px; height: 22px; border-radius: 6px; }
 .quantity-control.compact span { min-width: 16px; text-align: center; font-size: 13px; font-weight: 700; }
+/* Weighted line: a decimal field instead of the stepper. Wide enough for
+   "12.500" plus the spinner arrows, so the digits never clip. */
+.quantity-control.weighted input[type="number"] {
+  width: 84px;
+  padding: 6px 8px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.quantity-control.weighted.compact input[type="number"] {
+  width: 72px;
+  padding: 3px 6px;
+  font-size: 13px;
+  border-radius: 6px;
+}
+.quantity-control .quantity-unit {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
 .icon-button.tiny { width: 24px; height: 24px; border-radius: 6px; }
 .icon-button.has-discount { color: var(--orange-dark); border-color: var(--orange); background: var(--orange-light); }
 .field { display: grid; gap: 7px; color: var(--muted); font-size: 12px; margin-top: 16px; }

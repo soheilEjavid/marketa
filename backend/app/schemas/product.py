@@ -22,6 +22,10 @@ class ProductBase(BaseModel):
     min_sale_price: Decimal | None = Field(default=None, ge=0)
     stock_quantity: Decimal = Field(default=Decimal("0"), ge=0)
     low_stock_threshold: Decimal = Field(default=Decimal("0"), ge=0)
+    # Sold by weight: the POS asks for a decimal weight rather than
+    # stepping whole units, and quantities are shown to three decimals.
+    # `unit` is the label that weight is displayed in.
+    is_weighted: bool = False
     unit: str | None = Field(default=None, max_length=30)
     packaging_unit_label: str | None = Field(default=None, max_length=40)
     packaging_unit_quantity: Decimal | None = Field(default=None, gt=0)
@@ -62,6 +66,7 @@ class ProductUpdate(BaseModel):
     sale_price: Decimal | None = Field(default=None, ge=0)
     min_sale_price: Decimal | None = Field(default=None, ge=0)
     low_stock_threshold: Decimal | None = Field(default=None, ge=0)
+    is_weighted: bool | None = None
     unit: str | None = Field(default=None, max_length=30)
     packaging_unit_label: str | None = Field(default=None, max_length=40)
     packaging_unit_quantity: Decimal | None = Field(default=None, gt=0)
@@ -84,7 +89,7 @@ class ProductUpdate(BaseModel):
     is_dual_priced: bool | None = None
     old_purchase_price: Decimal | None = None
     old_sale_price: Decimal | None = None
-    old_price_stock_estimate: int | None = None
+    old_price_stock_estimate: Decimal | None = Field(default=None, ge=0)
     collapse_to_tier: Literal["old", "new"] | None = None
 
 
@@ -97,7 +102,7 @@ class ProductRead(ProductBase):
     is_dual_priced: bool = False
     old_purchase_price: Decimal | None = None
     old_sale_price: Decimal | None = None
-    old_price_stock_estimate: int | None = None
+    old_price_stock_estimate: Decimal | None = Field(default=None, ge=0)
     dual_price_started_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -10,6 +10,8 @@ class InventoryTransactionRead(BaseModel):
     id: int
     product_id: int
     product_name: str
+    is_weighted: bool = False
+    unit: str | None = None
     quantity_change: Decimal
     transaction_type: InventoryTransactionType
     related_id: int | None

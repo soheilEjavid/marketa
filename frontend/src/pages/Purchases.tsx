@@ -771,15 +771,25 @@ export function Purchases() {
                       </div>
                     )}
                   </div>
-                  <input
-                    type="number"
-                    min="0.001"
-                    step="0.001"
-                    value={line.quantity}
-                    onChange={(event) =>
-                      updateLine(line.key, { quantity: parseNumeric(event.target.value) })
-                    }
-                  />
+                  {/* Decimal quantities already worked here; what was
+                      missing was saying which unit 12.5 is 12.5 *of*. */}
+                  <div className="quantity-control weighted">
+                    <input
+                      type="number"
+                      min="0.001"
+                      step="0.001"
+                      value={line.quantity}
+                      onChange={(event) =>
+                        updateLine(line.key, { quantity: parseNumeric(event.target.value) })
+                      }
+                    />
+                    {(() => {
+                      const product = products.find((p) => p.id === line.productId);
+                      return product?.is_weighted && product.unit ? (
+                        <span className="quantity-unit">{product.unit}</span>
+                      ) : null;
+                    })()}
+                  </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <AmountInput
                       min="0"
