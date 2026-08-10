@@ -5,16 +5,11 @@ import bcrypt
 import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.db.session import get_db
 from app.models.entities import User
-
-# TODO(security): remove this dev-only auth bypass once real role-based
-# permissions (frontend login flow + token wiring) are implemented.
-_DEV_BYPASS_USERNAME = "admin"
 
 security_scheme = HTTPBearer(auto_error=False)
 
@@ -71,22 +66,6 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security_scheme),
     database: Session = Depends(get_db),
 ) -> User:
-    # TODO(security): remove this dev-only auth bypass once real role-based
-    # permissions (frontend login flow + token wiring) are implemented.
-    if settings.dev_disable_auth:
-        bypass_user = database.scalar(
-            select(User).where(User.username == _DEV_BYPASS_USERNAME)
-        )
-        if bypass_user is not None and bypass_user.is_active:
-            return bypass_user
-        return User(
-            id=0,
-            username="dev-bypass",
-            password_hash="",
-            full_name="Dev Auth Bypass",
-            role="admin",
-            is_active=True,
-        )
     if credentials is None:
         raise HTTPException(status_code=401, detail="Authentication required")
     payload = decode_access_token(credentials.credentials)

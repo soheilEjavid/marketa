@@ -25,11 +25,6 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 480
     allowed_origins: list[str] = ["http://localhost:5173"]
 
-    # TODO(security): remove this dev-only auth bypass once real role-based
-    # permissions (frontend login flow + token wiring) are implemented.
-    # Tracked in TODO.md under "Auth wiring". Must default to False always.
-    dev_disable_auth: bool = False
-
     # ── The shop's own clock ─────────────────────────────────────────────
     # Timestamps are stored in UTC, but "today's sales" and every daily
     # report line mean a day in the shop's own time, not in Greenwich's.

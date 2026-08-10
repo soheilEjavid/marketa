@@ -18,19 +18,6 @@ async def lifespan(_: FastAPI):
     # patching over a database that's missing a table/column. This only
     # logs; it never auto-fixes or blocks startup (see migration_check.py).
     check_migration_drift(engine)
-    # TODO(security): remove this dev-only auth bypass once real role-based
-    # permissions (frontend login flow + token wiring) are implemented.
-    if settings.dev_disable_auth:
-        banner = (
-            "\n"
-            + "!" * 78 + "\n"
-            + "! DEV_DISABLE_AUTH IS ENABLED — ALL AUTHENTICATION IS BYPASSED.".ljust(77) + "!\n"
-            + "! Every request is treated as the seeded 'admin' user. DO NOT enable".ljust(77) + "!\n"
-            + "! this outside local development, and never in a deployed environment.".ljust(77) + "!\n"
-            + "!" * 78
-        )
-        logger.warning(banner)
-        print(banner)  # noqa: T201 - intentionally loud, must be impossible to miss
     yield
 
 

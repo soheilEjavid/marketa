@@ -68,9 +68,9 @@ python -m app.seed
 
 Then sign in through the frontend with one of the seeded accounts
 (`admin` / `Admin@123`, `cashier` / `Cashier@123`, `manager` /
-`Manager@123`). There is a `DEV_DISABLE_AUTH` env var that bypasses login
-entirely for local debugging, but it is **not** part of this normal setup —
-leave it `false` (the default) unless you specifically need it.
+`Manager@123`). There is no way to bypass the login: the `DEV_DISABLE_AUTH`
+escape hatch that used to exist has been removed, so every request needs a
+real token.
 
 The API runs at `http://localhost:8000`; interactive documentation is available
 at `http://localhost:8000/docs`.

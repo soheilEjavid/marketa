@@ -24,9 +24,8 @@ _BACKEND_DIR = Path(__file__).resolve().parents[2]
 def check_migration_drift(engine: Engine) -> None:
     """Compare the database's current Alembic revision against the repo's
     migration head. Only logs — deliberately does not raise or block
-    startup, matching this codebase's existing precedent (see the
-    DEV_DISABLE_AUTH banner in main.py) of surfacing serious dev-time
-    problems loudly rather than refusing to run.
+    startup, on the principle that a serious dev-time problem should be
+    surfaced loudly rather than made into a refusal to run.
     """
     try:
         alembic_cfg = Config(str(_BACKEND_DIR / "alembic.ini"))

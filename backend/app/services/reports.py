@@ -359,8 +359,9 @@ def cashier_performance(
 ) -> list[dict]:
     """Per-cashier aggregates for completed sales attributed via
     Sale.shift_id -> CashierShift.cashier_id — deliberately NOT via
-    AuditLog.user_id, which is always the DEV_DISABLE_AUTH bypass user
-    regardless of which cashier is actually working the register. "Refund
+    AuditLog.user_id, which records whoever was authenticated for the
+    request rather than the cashier working that till: a manager editing an
+    invoice would otherwise be counted as the one who rang it up. "Refund
     amount" from the original spec is omitted entirely: this codebase has
     no sales-refund/return concept at all, and fabricating a zero would
     violate the "no calculated fake values" requirement.
@@ -433,7 +434,8 @@ def cashier_performance(
 
     # Held/edited/discarded counts: joined through the sale each audit entry
     # refers to, then through that sale's shift — NOT through
-    # AuditLog.user_id, which the DEV_DISABLE_AUTH bypass makes meaningless.
+    # AuditLog.user_id, for the same reason as above: it names the
+    # authenticated actor, not the cashier whose till the sale belongs to.
     action_rows = database.execute(
         select(
             CashierShift.cashier_id,
