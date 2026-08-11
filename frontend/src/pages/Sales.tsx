@@ -667,6 +667,19 @@ export function Sales() {
         invoiceNumber: sale.invoice_number,
         createdAt: sale.created_at,
         paymentMethod: sale.payment_method,
+        // One entry per tender that actually settled this invoice. Refund
+        // lines are negative, so summing per method nets them off rather
+        // than printing a payment that was handed back.
+        tenders: (() => {
+          const byMethod = new Map<string, number>();
+          for (const line of sale.payment_lines ?? []) {
+            byMethod.set(line.method, (byMethod.get(line.method) ?? 0) + Number(line.amount));
+          }
+          const points = Number(sale.loyalty_redeemed ?? 0);
+          if (points > 0) byMethod.set("loyalty", points);
+          return [...byMethod].filter(([, amount]) => amount !== 0)
+            .map(([method, amount]) => ({ method, amount }));
+        })(),
         customerName,
         lines: cart.map((line) => ({
           productName: line.product.name,

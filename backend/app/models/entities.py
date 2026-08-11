@@ -243,6 +243,25 @@ class Sale(Base, TimestampMixin):
     # feature existed or if the cashier forgot to open one.
     shift_id: Mapped[int | None] = mapped_column(ForeignKey("cashier_shifts.id"), index=True)
 
+    @property
+    def loyalty_redeemed(self) -> Decimal:
+        """How much of this invoice was settled with loyalty points.
+
+        Points are recorded as a CustomerPayment with method LOYALTY and
+        deliberately get no SalePaymentLine — they are not a tender that
+        moved through the drawer (see services/loyalty.py::redeem_points).
+        That makes them invisible to anything reading payment_lines, which
+        is why a receipt showing the tender split needs this to add up.
+
+        Callers that serialize many sales at once should eager-load
+        `customer_payments`, or this is one query per sale.
+        """
+        return sum(
+            (payment.amount for payment in self.customer_payments
+             if payment.method == PaymentMethod.LOYALTY),
+            Decimal("0"),
+        )
+
     customer: Mapped[Customer | None] = relationship(back_populates="sales")
     items: Mapped[list["SaleItem"]] = relationship(
         back_populates="sale", cascade="all, delete-orphan"

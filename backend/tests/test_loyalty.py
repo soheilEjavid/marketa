@@ -1124,3 +1124,41 @@ def test_points_are_their_own_tender_bucket_and_never_reach_the_till() -> None:
             "only the cash reached the drawer — points are not money that moved"
         )
         assert closed.difference == Decimal("0.00")
+
+
+def test_a_redemption_is_visible_to_whatever_prints_the_receipt() -> None:
+    """Points settle part of an invoice without ever becoming a
+    SalePaymentLine, so a receipt reading only payment_lines shows a split
+    that does not add up to the total. Sale.loyalty_redeemed is what closes
+    that gap, and SaleRead carries it."""
+    from app.schemas.sale import SaleRead
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as database:
+        product = Product(name="کالا", purchase_price=Decimal("1000"), sale_price=Decimal("10000"),
+                          stock_quantity=Decimal("100"), low_stock_threshold=Decimal("0"), is_active=True)
+        customer = Customer(full_name="عضو باشگاه", balance=Decimal("0"), credit_limit=Decimal("0"),
+                            loyalty_member=True, loyalty_points_balance=100)
+        database.add_all([product, customer])
+        database.commit()
+        database.add(LoyaltyPointTransaction(customer_id=customer.id, points=100,
+                                             transaction_type=LoyaltyTransactionType.EARN))
+        database.commit()
+
+        sale = process_sale(database, SaleCreate(
+            invoice_number="S-RECEIPT",
+            customer_id=customer.id,
+            items=[SaleItemCreate(product_id=product.id, quantity=Decimal("20"))],
+            redeem_points=40,
+            payment_lines=[SalePaymentLineInput(method="cash", amount=Decimal("180000"))]))
+
+        assert sale.total == Decimal("200000.00")
+        assert sale.loyalty_redeemed == Decimal("20000.00"), "40 points at 500 each"
+
+        payload = SaleRead.model_validate(sale)
+        tendered = sum(line.amount for line in payload.payment_lines) + payload.loyalty_redeemed
+        assert tendered == payload.total, (
+            "cash 180,000 + points 20,000 = the 200,000 invoice — a receipt built "
+            "from payment_lines alone would have shown 180,000 against a 200,000 total"
+        )

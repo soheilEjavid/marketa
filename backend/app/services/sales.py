@@ -394,7 +394,7 @@ def process_sale(database: Session, data: SaleCreate, *, credit_override_authori
     result = database.scalar(
         select(Sale)
         .where(Sale.id == sale.id)
-        .options(selectinload(Sale.items), selectinload(Sale.payment_lines))
+        .options(selectinload(Sale.items), selectinload(Sale.payment_lines), selectinload(Sale.customer_payments))
     )
     # Transient, never persisted — read by SaleRead for the post-checkout
     # "customer just became a loyalty member" banner (see routes/sales.py).
@@ -484,7 +484,7 @@ def hold_sale(database: Session, data: SaleCreate) -> Sale:
         raise
 
     return database.scalar(
-        select(Sale).where(Sale.id == sale.id).options(selectinload(Sale.items), selectinload(Sale.payment_lines))
+        select(Sale).where(Sale.id == sale.id).options(selectinload(Sale.items), selectinload(Sale.payment_lines), selectinload(Sale.customer_payments))
     )
 
 
@@ -493,7 +493,7 @@ def list_held_sales(database: Session) -> list[Sale]:
         database.scalars(
             select(Sale)
             .where(Sale.status == DocumentStatus.DRAFT)
-            .options(selectinload(Sale.items), selectinload(Sale.payment_lines))
+            .options(selectinload(Sale.items), selectinload(Sale.payment_lines), selectinload(Sale.customer_payments))
             .order_by(Sale.created_at.desc())
         )
     )
@@ -703,7 +703,7 @@ def edit_sale(database: Session, sale: Sale, data: SaleEditRequest) -> tuple[Sal
         raise
 
     updated = database.scalar(
-        select(Sale).where(Sale.id == sale.id).options(selectinload(Sale.items), selectinload(Sale.payment_lines))
+        select(Sale).where(Sale.id == sale.id).options(selectinload(Sale.items), selectinload(Sale.payment_lines), selectinload(Sale.customer_payments))
     )
     return updated, audit_details
 
@@ -712,7 +712,7 @@ def get_sale(database: Session, sale_id: int) -> Sale | None:
     return database.scalar(
         select(Sale)
         .where(Sale.id == sale_id)
-        .options(selectinload(Sale.items), selectinload(Sale.payment_lines))
+        .options(selectinload(Sale.items), selectinload(Sale.payment_lines), selectinload(Sale.customer_payments))
     )
 
 def list_sales(
@@ -736,7 +736,7 @@ def list_sales(
         if include_cancelled
         else [DocumentStatus.COMPLETED]
     )
-    query = select(Sale).where(Sale.status.in_(statuses)).options(selectinload(Sale.items), selectinload(Sale.payment_lines))
+    query = select(Sale).where(Sale.status.in_(statuses)).options(selectinload(Sale.items), selectinload(Sale.payment_lines), selectinload(Sale.customer_payments))
     if search:
         pattern = f"%{search.strip()}%"
         query = query.outerjoin(Customer, Sale.customer_id == Customer.id).where(

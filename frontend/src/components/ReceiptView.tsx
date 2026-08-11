@@ -21,7 +21,11 @@ export type ReceiptLine = {
 export type ReceiptData = {
   invoiceNumber: string;
   createdAt: string;
-  paymentMethod: "cash" | "card" | "credit" | "check" | "mixed" | "loyalty";
+  paymentMethod: "cash" | "card" | "card_to_card" | "credit" | "check" | "mixed" | "loyalty";
+  /** What was actually tendered, per method. A single "پرداخت ترکیبی" told
+   *  the customer nothing about how their own invoice was settled, and
+   *  card_to_card had no label at all, so it showed as blank. */
+  tenders?: { method: string; amount: number }[];
   customerName?: string | null;
   lines: ReceiptLine[];
   subtotal: number;
@@ -51,6 +55,7 @@ export function ReceiptView({ receipt, onNewSale, extraAction }: ReceiptViewProp
   // Any sale can now have a remaining balance regardless of payment method
   // (a split cash/card payment can leave part on account).
   const isPartial = receipt.remainingAmount > 0;
+  const hasTenders = Boolean(receipt.tenders && receipt.tenders.length > 0);
 
   return (
     <div className="receipt-page">
@@ -129,17 +134,41 @@ export function ReceiptView({ receipt, onNewSale, extraAction }: ReceiptViewProp
             <span>{t("total")}</span>
             <strong>{money(receipt.total)}</strong>
           </div>
-          <div>
-            <span>{t("paymentMethod")}</span>
-            <strong>{t(receipt.paymentMethod)}</strong>
-          </div>
+          {/* One line per tender, so a split payment is legible: what was
+              paid in cash, on a card, transferred, or settled with points,
+              and what is still owed. Falls back to the single method for a
+              receipt built without the breakdown. */}
+          {hasTenders ? (
+            <>
+              {(receipt.tenders ?? []).map((tender) => (
+                <div key={tender.method}>
+                  <span>{t(tender.method)}</span>
+                  <strong>{money(tender.amount)}</strong>
+                </div>
+              ))}
+              {receipt.remainingAmount > 0 && (
+                <div>
+                  <span>{t("creditRemainder")}</span>
+                  <strong>{money(receipt.remainingAmount)}</strong>
+                </div>
+              )}
+            </>
+          ) : (
+            <div>
+              <span>{t("paymentMethod")}</span>
+              <strong>{t(receipt.paymentMethod)}</strong>
+            </div>
+          )}
           {receipt.customerName && (
             <div>
               <span>{t("customer")}</span>
               <strong>{receipt.customerName}</strong>
             </div>
           )}
-          {isPartial && (
+          {/* Only for a receipt with no breakdown — with one the tender
+              lines already say what was paid and what is owed, and
+              repeating it reads as a second, different number. */}
+          {isPartial && !hasTenders && (
             <>
               <div>
                 <span>{t("paidAmount")}</span>

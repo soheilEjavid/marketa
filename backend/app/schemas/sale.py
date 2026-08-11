@@ -142,6 +142,9 @@ class SaleRead(BaseModel):
     created_at: datetime
     items: list[SaleItemRead]
     payment_lines: list[SalePaymentLineRead] = []
+    # Settled with points — no payment line of its own, so a receipt that
+    # only reads payment_lines silently loses it. See Sale.loyalty_redeemed.
+    loyalty_redeemed: Decimal = Decimal("0")
     shift_id: int | None = None
     # Transient (never persisted) — True only on the POST /sales response
     # for the exact sale whose payment crossed the loyalty membership

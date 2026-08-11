@@ -359,6 +359,9 @@ export type Sale = {
   created_at: string;
   items: SaleItemRead[];
   payment_lines: SalePaymentLineRead[];
+  /** Settled with loyalty points — recorded as a CustomerPayment, so it
+   *  never appears among payment_lines. */
+  loyalty_redeemed?: string;
   shift_id: number | null;
   // Transient — only true on the immediate POST /sales response for the
   // sale whose payment just crossed the loyalty membership threshold.
