@@ -204,29 +204,40 @@ export function CashierShiftBar() {
                 <X size={18} />
               </button>
             </div>
+            {/* expected_cash and difference come back null for a cashier —
+                the server withholds the verdict on their own count (see
+                services/shifts.py::to_shift_read). The panel then shows what
+                they did rather than an empty row: the drawer was counted and
+                the shift is closed. */}
             <div className="shift-close-summary">
-              <div>
-                <span>{t("expectedCash")}</span>
-                <strong>{money(Number(closeResult.expected_cash))}</strong>
-              </div>
+              {closeResult.expected_cash !== null && (
+                <div>
+                  <span>{t("expectedCash")}</span>
+                  <strong>{money(Number(closeResult.expected_cash))}</strong>
+                </div>
+              )}
               <div>
                 <span>{t("countedCash")}</span>
                 <strong>{money(Number(closeResult.closing_cash))}</strong>
               </div>
-              <div>
-                <span>{t("difference")}</span>
-                <strong
-                  className={
-                    Number(closeResult.difference) < 0
-                      ? "quantity-negative"
-                      : Number(closeResult.difference) > 0
-                        ? "quantity-positive"
-                        : ""
-                  }
-                >
-                  {money(Number(closeResult.difference))}
-                </strong>
-              </div>
+              {closeResult.difference !== null ? (
+                <div>
+                  <span>{t("difference")}</span>
+                  <strong
+                    className={
+                      Number(closeResult.difference) < 0
+                        ? "quantity-negative"
+                        : Number(closeResult.difference) > 0
+                          ? "quantity-positive"
+                          : ""
+                    }
+                  >
+                    {money(Number(closeResult.difference))}
+                  </strong>
+                </div>
+              ) : (
+                <p className="muted-text">{t("shiftClosedCashierNote")}</p>
+              )}
             </div>
             <div className="form-actions">
               <button className="primary-button" onClick={() => setCloseResult(null)}>

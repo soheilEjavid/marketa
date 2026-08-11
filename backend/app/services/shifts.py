@@ -218,7 +218,18 @@ def get_shift(database: Session, shift_id: int) -> CashierShift | None:
     )
 
 
-def to_shift_read(shift: CashierShift) -> dict:
+def to_shift_read(shift: CashierShift, *, reveal_reconciliation: bool = True) -> dict:
+    """Serialize a shift.
+
+    `reveal_reconciliation=False` withholds the two figures that judge the
+    count — what the till was expected to hold, and by how much it missed.
+    A cashier still opens their shift, counts the drawer and closes it;
+    what they do not get is the verdict, which is the manager's to read and
+    to raise. Withholding it in the interface alone would be theatre: the
+    number would still be one developer-tools panel away, so it is dropped
+    from the payload here, on the server, like every other role rule in
+    this app.
+    """
     return {
         "id": shift.id,
         "cashier_id": shift.cashier_id,
@@ -226,8 +237,8 @@ def to_shift_read(shift: CashierShift) -> dict:
         "status": shift.status,
         "opening_cash": shift.opening_cash,
         "closing_cash": shift.closing_cash,
-        "expected_cash": shift.expected_cash,
-        "difference": shift.difference,
+        "expected_cash": shift.expected_cash if reveal_reconciliation else None,
+        "difference": shift.difference if reveal_reconciliation else None,
         "opened_at": shift.opened_at,
         "closed_at": shift.closed_at,
         "notes": shift.notes,
