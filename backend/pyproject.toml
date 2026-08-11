@@ -15,6 +15,11 @@ dependencies = [
   "pydantic-settings>=2.5,<3",
   "PyJWT>=2.7,<3",
   "sqlalchemy>=2.0,<3",
+  # Windows ships no IANA time-zone database, so zoneinfo cannot resolve
+  # STORE_TIMEZONE there and config.py's validator rejects "Asia/Tehran" at
+  # startup — the whole business-day layer with it. On Linux/macOS this is
+  # an unused fallback behind the system tzdata.
+  "tzdata>=2024.1",
   "uvicorn[standard]>=0.30,<1",
 ]
 

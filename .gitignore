@@ -18,3 +18,13 @@ coverage/
 backend/_verify.py
 *.db-wal
 *.db-shm
+
+# Windows installer build artefacts. `dist/` above already covers the
+# finished .exe; these are the staging payload and the cached Python
+# runtime download (11MB), both rebuildable by installer/build.sh.
+installer/build/
+installer/cache/
+
+# The frontend bundle the API serves in a packaged install. Only ever
+# created by installer/build.sh, inside its payload — never in the repo.
+backend/app/static/
