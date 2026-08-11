@@ -49,7 +49,9 @@ BrandingText "${APP_NAME} ${VERSION}"
 ; separator. Paths that belong to the installed machine keep backslashes.
 OutFile "${DIST_DIR}/MARKETA-Setup-${VERSION}.exe"
 InstallDir "$PROGRAMFILES64\${APP_NAME}"
-InstallDirRegKey HKLM "${REG_APP}" "InstallDir"
+; No InstallDirRegKey: it is evaluated before .onInit, so it would read the
+; registry before SetRegView 64 has been applied and land in the 32-bit view.
+; .onInit reads the recorded directory explicitly instead.
 ; Program Files and ProgramData both need it, as does icacls.
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
@@ -275,16 +277,41 @@ Function .onInit
     ; Start Menu and desktop. A till is used by whoever is on shift, so the
     ; shop's data must not belong to the account that happened to install it.
     SetShellVarContext all
+    ; makensis builds a 32-bit installer, so without this every HKLM\Software
+    ; write is redirected into WOW6432Node — a 64-bit program in
+    ; $PROGRAMFILES64 registering itself as though it were 32-bit. Verified
+    ; happening on a real install before this line existed.
+    SetRegView 64
+
     ; Defaults, unless a previous install recorded its own choices. Resolved
     ; by Windows rather than assumed to be on C:, so a machine with Windows
     ; on another drive still works.
     StrCpy $DataDir "$APPDATA\${APP_NAME}"
-    ReadRegStr $0 HKLM "${REG_APP}" "DataDir"
-    ${If} $0 != ""
-        StrCpy $DataDir $0
-    ${EndIf}
+    Call ReadRecordedPaths
     StrCpy $AdminUser "owner"
     StrCpy $IsUpgrade 0
+FunctionEnd
+
+Function ReadRecordedPaths
+    ReadRegStr $1 HKLM "${REG_APP}" "InstallDir"
+    ReadRegStr $2 HKLM "${REG_APP}" "DataDir"
+    ${If} $1 == ""
+    ${AndIf} $2 == ""
+        ; A build from before SetRegView 64 recorded these under
+        ; WOW6432Node. Finding them still matters: without them this would
+        ; offer a fresh data folder and the shop's real one would sit
+        ; untouched next to a new empty database.
+        SetRegView 32
+        ReadRegStr $1 HKLM "${REG_APP}" "InstallDir"
+        ReadRegStr $2 HKLM "${REG_APP}" "DataDir"
+        SetRegView 64
+    ${EndIf}
+    ${If} $1 != ""
+        StrCpy $INSTDIR $1
+    ${EndIf}
+    ${If} $2 != ""
+        StrCpy $DataDir $2
+    ${EndIf}
 FunctionEnd
 
 ; ── Install ──────────────────────────────────────────────────────────────
@@ -407,10 +434,11 @@ SectionEnd
 
 Function un.onInit
     !insertmacro MUI_UNGETLANGUAGE
-    ; Must match the install context, or the uninstaller looks for the
-    ; shortcuts in the installing user's own Start Menu and leaves the real
-    ; ones behind.
+    ; Both must match what the installer used, or the uninstaller looks for
+    ; the shortcuts in the installing user's own Start Menu and for the
+    ; registry keys in the wrong view, and leaves all of them behind.
     SetShellVarContext all
+    SetRegView 64
 FunctionEnd
 
 Section "Uninstall"
@@ -441,6 +469,13 @@ Section "Uninstall"
 
     DeleteRegKey HKLM "${REG_UNINSTALL}"
     DeleteRegKey HKLM "${REG_APP}"
+    ; And the 32-bit view, in case this install predates SetRegView 64 — an
+    ; orphaned uninstall entry pointing at a deleted uninstaller is the kind
+    ; of leftover that makes reinstalling fail confusingly.
+    SetRegView 32
+    DeleteRegKey HKLM "${REG_UNINSTALL}"
+    DeleteRegKey HKLM "${REG_APP}"
+    SetRegView 64
 
     ; $DataDir is deliberately left where it is. The shop's whole ledger —
     ; stock, customers, invoices, debts — is in there, and an uninstall is

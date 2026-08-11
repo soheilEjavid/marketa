@@ -19,7 +19,6 @@ import webbrowser
 import marketa_runtime
 
 _STARTUP_TIMEOUT_SECONDS = 60
-_PID_FILE_NAME = "marketa.pid"
 
 # Mirrors settings.api_v1_prefix + the health route. Checked before the app is
 # imported, so it cannot be read from app.core.config at that point.
@@ -79,17 +78,28 @@ def main() -> int:
     logger = marketa_runtime.configure_logging("marketa-launch")
     port = marketa_runtime.configured_port()
 
+    # Our own server, from our own PID file — not "something on the port that
+    # says it is MARKETA". See marketa_runtime.running_server_pid().
+    own_pid = marketa_runtime.running_server_pid()
+    if own_pid is not None:
+        logger.info("Already running as PID %s; opening a browser tab.", own_pid)
+        # Through the poll rather than opening straight away: this install may
+        # have been started a second ago and not yet be accepting connections.
+        _open_when_ready(port)
+        return 0
+
     if _port_is_answering(port):
-        if _marketa_is_answering(port):
-            logger.info("Already running on port %s; opening a browser tab.", port)
-            webbrowser.open(f"http://127.0.0.1:{port}/")
-            return 0
-        logger.error("Port %s is held by something that is not MARKETA.", port)
+        other = "another MARKETA" if _marketa_is_answering(port) else "another program"
+        logger.error(
+            "Port %s is held by %s, and it is not this installation's server.",
+            port,
+            other,
+        )
         _alert(
             f"MARKETA cannot start: port {port} on this computer is already "
-            f"in use by another program.\n\n"
-            f"Change MARKETA_PORT in this file and try again:\n"
-            f"{data_directory / '.env'}"
+            f"in use by {other}.\n\n"
+            f"Close that program, or change MARKETA_PORT in this file and try "
+            f"again:\n{data_directory / '.env'}"
         )
         return 1
 
@@ -97,7 +107,7 @@ def main() -> int:
     # or app.core.config would look for .env in the wrong place.
     import uvicorn
 
-    (data_directory / _PID_FILE_NAME).write_text(str(os.getpid()), encoding="utf-8")
+    marketa_runtime.pid_file().write_text(str(os.getpid()), encoding="utf-8")
     threading.Thread(target=_open_when_ready, args=(port,), daemon=True).start()
 
     logger.info("Starting MARKETA on port %s (data directory %s).", port, data_directory)
@@ -114,7 +124,7 @@ def main() -> int:
             access_log=False,
         )
     finally:
-        (data_directory / _PID_FILE_NAME).unlink(missing_ok=True)
+        marketa_runtime.pid_file().unlink(missing_ok=True)
     return 0
 
 

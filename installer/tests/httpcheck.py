@@ -1,6 +1,9 @@
 """Exercise the running server over HTTP, on Windows, as a browser would.
 
-Usage: python httpcheck.py [port]
+Usage: python httpcheck.py [port] [admin-password]
+
+Give the administrator password to include the login checks; without it
+they are skipped, since only whoever ran the wizard knows it.
 """
 
 import json
@@ -13,6 +16,7 @@ import urllib.request
 from pathlib import Path
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
+PASSWORD = sys.argv[2] if len(sys.argv) > 2 else None
 BASE = f"http://127.0.0.1:{PORT}"
 failures = []
 
@@ -112,13 +116,16 @@ def hashed_asset_is_served():
 
 def login_works():
     status, _, body = fetch(
-        "/api/v1/auth/login", {"username": "owner", "password": "Owner@12345"}
+        "/api/v1/auth/login", {"username": "owner", "password": PASSWORD}
     )
     assert status == 200, f"{status} {body}"
     payload = json.loads(body)
     assert payload["role"] == "admin", payload
     assert payload["token"], payload
-    return f"role={payload['role']}, token {len(payload['token'])} chars"
+    return (
+        f"role={payload['role']}, full_name={payload['full_name']!r}, "
+        f"token {len(payload['token'])} chars"
+    )
 
 
 def wrong_password_is_rejected():
@@ -129,23 +136,17 @@ def wrong_password_is_rejected():
     return "401"
 
 
-def persian_name_survives_the_round_trip():
-    status, _, body = fetch(
-        "/api/v1/auth/login", {"username": "owner", "password": "Owner@12345"}
-    )
-    assert status == 200, status
-    return f"full_name={json.loads(body)['full_name']!r}"
-
-
 check("GET /api/v1/health", health)
 check("GET / serves the interface", root_serves_interface)
 check("GET /api/v1/salez is a JSON 404, not the HTML shell", unknown_api_path_is_json_404)
 check("GET /api/v2/sales is a 404", unknown_api_version_is_404)
 check("GET /reports/margin returns the SPA shell", client_route_gets_the_shell)
 check("GET the hashed JS bundle", hashed_asset_is_served)
-check("POST /api/v1/auth/login with the wizard's account", login_works)
 check("POST /api/v1/auth/login with a wrong password", wrong_password_is_rejected)
-check("the Persian full name comes back intact", persian_name_survives_the_round_trip)
+if PASSWORD:
+    check("POST /api/v1/auth/login with the wizard's account", login_works)
+else:
+    print("skip  login with the real password (none given on the command line)")
 
 print()
 if failures:

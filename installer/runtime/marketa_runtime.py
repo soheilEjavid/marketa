@@ -19,11 +19,17 @@ Nothing here imports `app`; that is the caller's job, after `prepare()`.
 
 import logging
 import os
+import subprocess
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
+
+PID_FILE_NAME = "marketa.pid"
+
+# The images this install's server can legitimately be running under.
+SERVER_IMAGES = {"python.exe", "pythonw.exe"}
 
 _DEFAULT_DATA_DIR = Path(r"C:\ProgramData\MARKETA")
 
@@ -89,6 +95,63 @@ def configure_logging(name: str) -> logging.Logger:
     root.setLevel(logging.INFO)
     root.addHandler(handler)
     return logging.getLogger(name)
+
+
+def pid_file() -> Path:
+    """Where the running server records its process id."""
+    return data_dir() / PID_FILE_NAME
+
+
+def parse_tasklist_image(stdout: str) -> str | None:
+    """The image name out of `tasklist /NH /FO CSV`, or None for no match.
+
+    Parsed strictly, because tasklist reports "nothing matched" on *stdout*
+    and with exit code 0: `INFO: No tasks are running which match the
+    specified criteria.` Splitting that on commas yields the whole sentence
+    as an "image name", which then looks like a PID belonging to another
+    program. A real row is CSV-quoted, so requiring the leading quote
+    separates the two cases exactly.
+    """
+    for line in stdout.strip().splitlines():
+        line = line.strip()
+        if line.startswith('"'):
+            return line.split(",")[0].strip('"') or None
+    return None
+
+
+def process_image_name(pid: int) -> str | None:
+    """The executable behind a PID, or None if nothing is running under it."""
+    completed = subprocess.run(
+        ["tasklist", "/FI", f"PID eq {pid}", "/NH", "/FO", "CSV"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return parse_tasklist_image(completed.stdout)
+
+
+def running_server_pid() -> int | None:
+    """The PID of *this install's* server, or None if it is not running.
+
+    Deliberately answered from our own bookkeeping rather than by asking
+    whatever is on the port. "Is MARKETA on this port?" is a different and
+    much weaker question: another MARKETA — a developer's copy, a second
+    install — answers it perfectly well, and treating that as "already
+    running" means this install never starts and the shopkeeper is quietly
+    shown somebody else's data. Windows also recycles PIDs, so a live
+    process under our recorded number still has to look like ours.
+    """
+    recorded = pid_file()
+    if not recorded.is_file():
+        return None
+    try:
+        pid = int(recorded.read_text(encoding="utf-8").strip())
+    except ValueError:
+        return None
+    image = process_image_name(pid)
+    if image is None or image.lower() not in SERVER_IMAGES:
+        return None
+    return pid
 
 
 def configured_port() -> int:
