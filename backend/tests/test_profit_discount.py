@@ -7,7 +7,7 @@ was shown a profit it had not actually earned — and net_profit(), which
 sums this same column, inherited the error.
 """
 
-from datetime import UTC, datetime
+from app.core.store_time import business_day_now
 from decimal import Decimal
 
 from sqlalchemy import create_engine
@@ -58,12 +58,11 @@ def test_invoice_discount_reduces_reported_profit() -> None:
             ),
         )
 
-        # The UTC day, not the local one: Sale.created_at is written by
-        # func.now() (UTC) and daily_sales_summary() buckets on the UTC
-        # calendar day, so date.today() disagreed with both for any run
-        # between 00:00 and 03:30 Tehran time and failed this test by the
+        # The store's trading day, which is what daily_sales_summary()
+        # buckets on. Asking for the UTC day instead fails between 20:30
+        # UTC and midnight, when Tehran has already turned over — by the
         # clock rather than by the code.
-        today = datetime.now(UTC).date()
+        today = business_day_now()
         rows = daily_sales_summary(database, from_date=today, to_date=today)
         assert len(rows) == 1, rows
         row = rows[0]
@@ -101,12 +100,11 @@ def test_profit_unaffected_when_no_invoice_discount() -> None:
             ),
         )
 
-        # The UTC day, not the local one: Sale.created_at is written by
-        # func.now() (UTC) and daily_sales_summary() buckets on the UTC
-        # calendar day, so date.today() disagreed with both for any run
-        # between 00:00 and 03:30 Tehran time and failed this test by the
+        # The store's trading day, which is what daily_sales_summary()
+        # buckets on. Asking for the UTC day instead fails between 20:30
+        # UTC and midnight, when Tehran has already turned over — by the
         # clock rather than by the code.
-        today = datetime.now(UTC).date()
+        today = business_day_now()
         row = daily_sales_summary(database, from_date=today, to_date=today)[0]
         assert Decimal(str(row["total_sales"])) == Decimal("10000"), row["total_sales"]
         assert Decimal(str(row["profit"])) == Decimal("4000"), row["profit"]

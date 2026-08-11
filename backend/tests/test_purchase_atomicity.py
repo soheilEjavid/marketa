@@ -96,6 +96,8 @@ def test_a_successful_dual_priced_delivery_still_lands_whole() -> None:
         assert product.is_dual_priced is True
         assert product.sale_price == Decimal("90000.00"), "the new batch's price"
         assert product.old_sale_price == Decimal("70000.00"), "the old batch keeps its own"
-        assert product.purchase_price == Decimal("65000.00")
+        # 10 on hand at 50,000 plus 5 delivered at 65,000
+        # -> (10×50,000 + 5×65,000) / 15 = 55,000.
+        assert product.purchase_price == Decimal("55000.00")
         assert product.stock_quantity == Decimal("15.000")
         assert len(database.scalars(select(AuditLog)).all()) == 1, "one audit row, committed with the rest"

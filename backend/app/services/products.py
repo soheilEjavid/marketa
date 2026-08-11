@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
@@ -107,6 +107,41 @@ def deactivate_product(database: Session, product: Product) -> Product:
     return product
 
 
+def weighted_average_cost(
+    current_stock: Decimal,
+    current_cost: Decimal,
+    incoming_quantity: Decimal,
+    incoming_cost: Decimal,
+) -> Decimal:
+    """The cost of one unit once a delivery is mixed into what is on hand.
+
+        (stock × cost + delivered × delivered_cost) / (stock + delivered)
+
+    Replacing the cost outright — what this used to do — says every unit on
+    the shelf was bought at the newest price, which is only true when the
+    shelf was empty. With stock left over from a cheaper batch it overstates
+    what the goods cost, understates margin, and inflates the inventory
+    valuation. That error is not confined to dual-priced products; it
+    applies to any restock at a new price with stock still on hand.
+
+    Negative or zero stock falls back to the delivered price: there is
+    nothing to average against, and a negative figure would produce a
+    nonsense weight.
+    """
+    if current_stock <= 0:
+        return _money(incoming_cost)
+    if incoming_quantity <= 0:
+        return _money(current_cost)
+    total_units = current_stock + incoming_quantity
+    blended = (current_stock * current_cost + incoming_quantity * incoming_cost) / total_units
+    return _money(blended)
+
+
+def _money(value: Decimal) -> Decimal:
+    """Money is Numeric(14, 2) throughout; a blended cost lands on thirds."""
+    return Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
 # ── Dual-price helpers ─────────────────────────────────────────────────────
 
 
@@ -116,6 +151,7 @@ def enable_dual_pricing(
     new_purchase_price: Decimal,
     new_sale_price: Decimal,
     *,
+    incoming_quantity: Decimal = Decimal("0"),
     old_price_stock_estimate: Decimal | None = None,
     user_id: int | None = None,
     username: str | None = None,
@@ -132,9 +168,17 @@ def enable_dual_pricing(
     the product dual-priced with prices from goods that never arrived, no
     purchase recorded, and an audit row for an event that did not happen.
     """
+    # The sale side genuinely splits in two: the old batch keeps its price
+    # on the shelf. The cost side does not — those units are mixed in the
+    # stockroom and carry one blended cost from here on. old_purchase_price
+    # is kept only as a record of what the earlier batch cost; nothing reads
+    # it as a cost basis any more (see services/sales.py).
     product.old_purchase_price = product.purchase_price
     product.old_sale_price = product.sale_price
-    product.purchase_price = new_purchase_price
+    product.purchase_price = weighted_average_cost(
+        product.stock_quantity, product.purchase_price,
+        incoming_quantity, new_purchase_price,
+    )
     product.sale_price = new_sale_price
     product.is_dual_priced = True
     product.dual_price_started_at = datetime.now(UTC)
@@ -174,10 +218,13 @@ def collapse_dual_pricing(
     username: str | None = None,
 ) -> Product:
     """Collapse a dual-priced product back to a single price, keeping the specified tier."""
+    # Only the *sale* price has two tiers to choose between. Cost is a
+    # single blended figure and collapsing a marketing decision must not
+    # rewrite it — picking the old tier here used to drag purchase_price
+    # back to the earlier batch's price, discarding the blend.
     if keep_tier == "old":
-        product.purchase_price = product.old_purchase_price
         product.sale_price = product.old_sale_price
-    # else "new" — keep current prices as-is
+    # else "new" — keep the current sale price as-is
 
     product.is_dual_priced = False
     old_purchase = product.old_purchase_price

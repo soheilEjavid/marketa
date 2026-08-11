@@ -126,7 +126,10 @@ def test_purchase_updates_stock_cost_and_inventory() -> None:
 
         assert purchase.total == Decimal("37.50")
         assert tea.stock_quantity == Decimal("10.000")
-        assert tea.purchase_price == Decimal("6.25")
+        # Blended, not replaced: 4 already on the shelf at 5.00 plus 6
+        # delivered at 6.25 -> (4×5 + 6×6.25) / 10 = 5.75. Replacing the
+        # cost outright would claim all ten had cost 6.25.
+        assert tea.purchase_price == Decimal("5.75")
         assert transaction is not None
         assert transaction.quantity_change == Decimal("6.000")
         assert transaction.transaction_type == InventoryTransactionType.PURCHASE

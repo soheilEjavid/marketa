@@ -372,6 +372,7 @@ export function Products() {
                         <span
                           className={`old-stock-estimate ${oldStockEstimate <= 0 ? "exhausted" : ""}`}
                           style={{ marginTop: 4 }}
+                          title={t("dualPriceOldStockEstimateWhy")}
                         >
                           {oldStockEstimate > 0
                             ? t("dualPriceOldStockEstimate").replace("{count}", number(oldStockEstimate))

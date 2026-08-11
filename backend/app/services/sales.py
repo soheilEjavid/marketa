@@ -74,21 +74,26 @@ def _resolve_price_tier(
     cost_price: Decimal
     price_tier: str | None = None
 
+    # Cost never varies by tier. The tier is a decision about what to charge
+    # the customer; what the goods cost the shop is one blended figure
+    # (see products.weighted_average_cost), because the two batches are
+    # mixed in the stockroom and nobody can say which carton this was.
+    # Reading old_purchase_price here used to book a cheaper cost against a
+    # cheaper sale, which flattered the margin on exactly the sales where
+    # the shop was making least.
+    cost_price = product.purchase_price
+
     if product.is_dual_priced and getattr(item_data, "price_tier", None):
         price_tier = item_data.price_tier
         if item_data.price_tier == "old":
-            cost_price = product.old_purchase_price or product.purchase_price
             unit_price = item_data.unit_price or product.old_sale_price or product.sale_price
         else:  # "new"
-            cost_price = product.purchase_price
             unit_price = item_data.unit_price or product.sale_price
-    elif product.is_dual_priced and not getattr(item_data, "price_tier", None):
-        # No tier specified — default to old price (prefer selling old stock first)
+    elif product.is_dual_priced:
+        # No tier specified — default to the old price (sell old stock first).
         price_tier = "old"
-        cost_price = product.old_purchase_price or product.purchase_price
         unit_price = item_data.unit_price or product.old_sale_price or product.sale_price
     else:
-        cost_price = product.purchase_price
         unit_price = item_data.unit_price or product.sale_price
 
     return unit_price, cost_price, price_tier

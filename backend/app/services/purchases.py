@@ -22,7 +22,7 @@ from app.models.entities import (
 )
 from app.schemas.purchase import PurchaseCreate, PurchaseEditRequest, PurchaseItemCreate, PurchasePaymentLineInput
 from app.services.financials import payment_status
-from app.services.products import enable_dual_pricing
+from app.services.products import enable_dual_pricing, weighted_average_cost
 
 
 class PurchaseError(ValueError):
@@ -133,6 +133,7 @@ def _apply_dual_pricing(
                     product,
                     new_purchase_price=item_data.unit_cost,
                     new_sale_price=Decimal(str(new_sale_price)),
+                    incoming_quantity=item_data.quantity,
                     commit=False,
                 )
 
@@ -179,12 +180,16 @@ def _build_purchase_items(
                 line_total=line_total,
             )
         )
-        product.stock_quantity += item_data.quantity
-        # Only update purchase_price if NOT in dual-price mode (dual pricing already set it)
+        # Blend before the stock moves: the weighting needs what was on the
+        # shelf *before* this delivery landed on it.
         if not product.is_dual_priced:
-            product.purchase_price = item_data.unit_cost
+            product.purchase_price = weighted_average_cost(
+                product.stock_quantity, product.purchase_price,
+                item_data.quantity, item_data.unit_cost,
+            )
             if item_data.selling_price is not None:
                 product.sale_price = item_data.selling_price
+        product.stock_quantity += item_data.quantity
         database.add(
             InventoryTransaction(
                 product_id=product.id,

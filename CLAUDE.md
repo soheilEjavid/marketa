@@ -152,6 +152,35 @@ directly rather than going through HTTP. Financial tests hand-compute the
 expected figure (see `test_inflation_rate.py`, `test_returns_accounting.py`) —
 match that when adding accounting logic; asserting "it runs" is not a test here.
 
+### Cost is a weighted average, and the tier never changes it
+
+`Product.purchase_price` is the blended cost of what is on the shelf, not
+the price of the last delivery. Every restock runs
+`products.weighted_average_cost(stock, cost, delivered, delivered_cost)` —
+in `purchases._build_purchase_items` for the ordinary path and in
+`products.enable_dual_pricing` for the dual-priced one, both *before* the
+stock is incremented, since the weighting needs the pre-delivery figure.
+
+Dual pricing splits the **sale** price only. `SaleItem.cost_price` is
+always `Product.purchase_price` regardless of the tier chosen
+(`services/sales.py::_resolve_price_tier`): the tier decides what the
+customer pays, while the two batches are mixed in the stockroom and nobody
+can say which carton a sale came from. `collapse_dual_pricing` picks a sale
+price and must never touch the cost. `Product.old_purchase_price` is a
+record of what an earlier batch cost and is read by nothing as a cost
+basis.
+
+Historical `SaleItem.cost_price` is never recomputed — the batch a sold
+unit came from was never recorded, so a backfill would be guesswork. The
+three products that predated this carried their old cost separately and
+were blended once by `app/repair_dual_price_cost.py` (idempotent; clears
+`old_purchase_price` so a second run finds nothing).
+
+`Product.old_price_stock_estimate` is what its name says. It counts down as
+the old tier sells, so a cashier picking the wrong tier makes it drift from
+the real shelf. Everything derived from it — including that one-off blend —
+is the best estimate available rather than a count, and the UI says so.
+
 ### The inflation report measures this shop, not the country
 
 `services/reports.py`'s inflation section is a Laspeyres price index over two
