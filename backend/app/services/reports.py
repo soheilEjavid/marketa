@@ -143,13 +143,26 @@ def payment_method_breakdown(
     from_date: date | None = None,
     to_date: date | None = None,
 ) -> list[dict]:
-    """Money collected per real tender (cash/card/check/credit) in the date
-    range. A split-payment sale (Sale.payment_method == "mixed") is never its
-    own bucket here — its total is distributed across its actual
-    SalePaymentLine rows, so "mixed" never appears in the result. Sales with
-    no payment lines at all (pure-credit sales, or rows predating the
-    split-payment feature) fall back to their whole Sale.total under
-    Sale.payment_method, same as before this changed.
+    """How each sale in the range was settled, by tender.
+
+    A split-payment sale (Sale.payment_method == "mixed") is never its own
+    bucket — its total is distributed across its actual SalePaymentLine
+    rows, so "mixed" never appears. Sales with no payment lines at all
+    (pure credit, or rows predating the split-payment feature) fall back to
+    their whole Sale.total under Sale.payment_method.
+
+    Loyalty points are their own bucket, and have to be: a redemption
+    settles part of an invoice without ever becoming a SalePaymentLine, so
+    neither branch above could see it. An invoice paid 550,500 in cash and
+    49,500 in points landed 550,500 here against a 600,000 sale, and the
+    report silently stopped adding up to revenue — with nothing on it to
+    explain the gap. Points are not money the shop collected, but they are
+    how the invoice was settled, and a breakdown that cannot be reconciled
+    against total sales is not worth much.
+
+    This is deliberately NOT the same question the till asks.
+    shifts.py::close_shift counts cash that physically moved through the
+    drawer and must never see this bucket; the two paths stay separate.
     """
     today = business_day_now()
     from_date = from_date or today - timedelta(days=30)
@@ -184,9 +197,22 @@ def payment_method_breakdown(
         .group_by(Sale.payment_method)
     ).all()
 
+    # Settled with points: a CustomerPayment carrying method LOYALTY, which
+    # by design has no payment line of its own (see services/loyalty.py).
+    loyalty_rows = database.execute(
+        select(
+            CustomerPayment.method,
+            func.coalesce(func.sum(CustomerPayment.amount), 0),
+            func.count(CustomerPayment.id),
+        )
+        .join(Sale, Sale.id == CustomerPayment.sale_id)
+        .where(*date_filters, CustomerPayment.method == PaymentMethod.LOYALTY)
+        .group_by(CustomerPayment.method)
+    ).all()
+
     totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
     counts: dict[str, int] = defaultdict(int)
-    for method, total, count in [*line_rows, *lineless_rows]:
+    for method, total, count in [*line_rows, *lineless_rows, *loyalty_rows]:
         key = method.value if hasattr(method, "value") else method
         totals[key] += total
         counts[key] += count
@@ -426,8 +452,30 @@ def cashier_performance(
         )
         .group_by(CashierShift.cashier_id, Sale.payment_method)
     ).all()
+    # Same loyalty bucket as payment_method_breakdown, for the same reason:
+    # a redemption settles part of an invoice with no payment line, so
+    # without this a cashier's tender split silently falls short of the
+    # sales they rang up.
+    method_loyalty_rows = database.execute(
+        select(
+            CashierShift.cashier_id,
+            CustomerPayment.method,
+            func.coalesce(func.sum(CustomerPayment.amount), 0),
+        )
+        .select_from(CustomerPayment)
+        .join(Sale, Sale.id == CustomerPayment.sale_id)
+        .join(CashierShift, Sale.shift_id == CashierShift.id)
+        .where(
+            Sale.status == DocumentStatus.COMPLETED,
+            business_day(Sale.created_at) >= from_date,
+            business_day(Sale.created_at) <= to_date,
+            CustomerPayment.method == PaymentMethod.LOYALTY,
+        )
+        .group_by(CashierShift.cashier_id, CustomerPayment.method)
+    ).all()
+
     breakdown_by_cashier: dict[int, dict[str, Decimal]] = defaultdict(dict)
-    for cashier_id, method, total in [*method_line_rows, *method_lineless_rows]:
+    for cashier_id, method, total in [*method_line_rows, *method_lineless_rows, *method_loyalty_rows]:
         key = method.value if hasattr(method, "value") else method
         per_cashier = breakdown_by_cashier[cashier_id]
         per_cashier[key] = per_cashier.get(key, Decimal("0")) + total

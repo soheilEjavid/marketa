@@ -17,6 +17,7 @@ from app.models.entities import (
     Sale,
     SaleItem,
     SalePaymentLine,
+    User,
 )
 from app.schemas.customer import CustomerCreate
 from app.schemas.financial import PaymentCreate
@@ -1077,3 +1078,49 @@ def test_loyalty_redemptions_report_empty_when_no_redemptions() -> None:
     Base.metadata.create_all(engine)
     with Session(engine) as database:
         assert loyalty_redemptions(database) == []
+
+
+def test_points_are_their_own_tender_bucket_and_never_reach_the_till() -> None:
+    """A redemption settles part of an invoice without ever becoming a
+    SalePaymentLine, so the tender report could not see it and quietly
+    stopped adding up to revenue. It is a bucket now — but strictly on the
+    reporting side: no points ever passed through the drawer, so the till
+    must still ignore them."""
+    from app.services.reports import payment_method_breakdown
+    from app.services.shifts import close_shift, open_shift
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as database:
+        product = Product(name="کالا", purchase_price=Decimal("1000"), sale_price=Decimal("10000"),
+                          stock_quantity=Decimal("100"), low_stock_threshold=Decimal("0"), is_active=True)
+        customer = Customer(full_name="عضو باشگاه", balance=Decimal("0"),
+                            credit_limit=Decimal("0"), loyalty_member=True,
+                            loyalty_points_balance=100)
+        cashier = User(username="c", password_hash="x", full_name="صندوق‌دار", role="cashier")
+        database.add_all([product, customer, cashier])
+        database.commit()
+        database.add(LoyaltyPointTransaction(customer_id=customer.id, points=100,
+                                             transaction_type=LoyaltyTransactionType.EARN))
+        database.commit()
+
+        shift = open_shift(database, cashier_id=cashier.id, opening_cash=Decimal("0"))
+        # 200,000 invoice: 20,000 on points (40 × 500), the rest in cash.
+        sale = process_sale(database, SaleCreate(
+            invoice_number="S-POINTS",
+            customer_id=customer.id,
+            items=[SaleItemCreate(product_id=product.id, quantity=Decimal("20"))],
+            redeem_points=40,
+            payment_lines=[SalePaymentLineInput(method="cash", amount=Decimal("180000"))]))
+        assert sale.total == Decimal("200000.00")
+
+        buckets = {row["payment_method"]: row["total"] for row in payment_method_breakdown(database)}
+        assert buckets["loyalty"] == Decimal("20000.00"), "points settled part of the invoice"
+        assert buckets["cash"] == Decimal("180000.00")
+        assert sum(buckets.values()) == sale.total, "the breakdown reconciles to the sale again"
+
+        closed = close_shift(database, shift, closing_cash=Decimal("180000"))
+        assert closed.expected_cash == Decimal("180000.00"), (
+            "only the cash reached the drawer — points are not money that moved"
+        )
+        assert closed.difference == Decimal("0.00")
