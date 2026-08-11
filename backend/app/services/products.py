@@ -119,8 +119,19 @@ def enable_dual_pricing(
     old_price_stock_estimate: Decimal | None = None,
     user_id: int | None = None,
     username: str | None = None,
+    commit: bool = True,
 ) -> Product:
-    """Move current prices to old_* fields and set new prices, entering dual-price mode."""
+    """Move current prices to old_* fields and set new prices, entering
+    dual-price mode.
+
+    `commit=False` for callers inside a larger transaction — the same
+    convention financials.record_customer_payment() follows.
+    purchases._apply_dual_pricing() runs this from inside process_purchase(),
+    *before* the Purchase row exists, so committing here persisted the price
+    split on its own: a delivery that then failed its overpayment guard left
+    the product dual-priced with prices from goods that never arrived, no
+    purchase recorded, and an audit row for an event that did not happen.
+    """
     product.old_purchase_price = product.purchase_price
     product.old_sale_price = product.sale_price
     product.purchase_price = new_purchase_price
@@ -129,11 +140,17 @@ def enable_dual_pricing(
     product.dual_price_started_at = datetime.now(UTC)
     if old_price_stock_estimate is not None:
         product.old_price_stock_estimate = old_price_stock_estimate
-    database.commit()
-    database.refresh(product)
+    if commit:
+        database.commit()
+        database.refresh(product)
+    else:
+        # The caller owns the transaction; make the new values visible to
+        # the rest of it without ending it.
+        database.flush()
 
     record_audit(
         database,
+        commit=commit,
         user_id=user_id,
         username=username,
         action="enable_dual_pricing",

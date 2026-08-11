@@ -126,11 +126,14 @@ def _apply_dual_pricing(
                 new_sale_price = data.dual_pricing_new_sale_prices.get(
                     product.id, item_data.selling_price or product.sale_price
                 )
+                # commit=False: process_purchase() owns this transaction and
+                # the Purchase row does not exist yet.
                 enable_dual_pricing(
                     database,
                     product,
                     new_purchase_price=item_data.unit_cost,
                     new_sale_price=Decimal(str(new_sale_price)),
+                    commit=False,
                 )
 
 

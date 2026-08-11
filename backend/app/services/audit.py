@@ -14,7 +14,19 @@ def record_audit(
     entity_type: str,
     entity_id: int | None = None,
     details: str | None = None,
+    commit: bool = True,
 ) -> AuditLog:
+    """Write one audit row.
+
+    `commit=False` for any caller inside a larger transaction — the same
+    convention financials.record_customer_payment() and
+    products.decrement_old_stock_estimate() follow. Every caller today is
+    either a route running after its service has committed, or a service
+    that has just committed itself, so committing here has been harmless.
+    It was still a trap armed for the next caller: this pattern — a helper
+    committing partway through somebody else's transaction — has produced
+    two real data-integrity bugs in this codebase already.
+    """
     log = AuditLog(
         user_id=user_id,
         username=username,
@@ -24,7 +36,8 @@ def record_audit(
         details=details,
     )
     database.add(log)
-    database.commit()
+    if commit:
+        database.commit()
     return log
 
 
