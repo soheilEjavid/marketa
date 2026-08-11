@@ -90,6 +90,37 @@ The server listens on loopback only. One shop, one till, one machine — there
 is no reason for the whole ledger to be reachable from the neighbourhood's
 wifi with only a login page in front of it.
 
+## Self-tests, on the machine that matters
+
+`installer/tests/` ships inside the payload, so any installed copy can be
+checked from the shop's own machine. From the install directory:
+
+```bat
+python\python.exe tests\selftest.py          :: runtime, wheels, tzdata, bcrypt
+python\python.exe tests\httpcheck.py 8000    :: HTTP surface of a running server
+python\python.exe tests\edgecheck.py         :: PID reuse, stale PIDs, port conflicts
+```
+
+They exist because a Linux dry run cannot see the things that actually broke.
+All three of these were found by running them on real Windows:
+
+1. **The payload root was not importable.** A `._pth` file *replaces* the
+   normal `sys.path` computation, including the rule that puts a script's own
+   directory (or, for `-m`, the working directory) on the path. Every entry
+   point died with `No module named 'marketa_runtime'`, and
+   `-m app.bootstrap` with `No module named 'app'`. Fixed by the `..` line in
+   the generated `_pth`, which `build.sh` now asserts is there.
+2. **The first-admin step ran in the wrong directory.** `app.core.config`
+   reads `.env` relative to the working directory, and the installer runs from
+   the program directory where there is none — so it came up with no
+   SECRET_KEY and died in configuration validation. Hence `create_admin.py`,
+   which calls `prepare()` before importing anything from `app`.
+3. **`tasklist` reports "nothing matched" on stdout, with exit code 0.**
+   `stop.py` read that sentence as an image name, so a server that had died
+   without cleaning up produced "this PID belongs to INFO: No tasks are
+   running…, not MARKETA" and a failure exit instead of quietly tidying the
+   stale file away.
+
 ## Known limits
 
 - **Unsigned.** Windows SmartScreen will warn on first run; the shopkeeper

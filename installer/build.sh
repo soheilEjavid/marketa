@@ -129,9 +129,18 @@ mkdir -p "$PAYLOAD_DIR/python"
 # The embeddable runtime starts with an isolated sys.path listing only its own
 # stdlib zip. Adding site-packages and turning `site` back on is what lets it
 # import the dependencies below; without this it cannot even find fastapi.
+#
+# `..` — the payload root, one level up from python.exe — matters just as
+# much and is easy to miss. A ._pth file *replaces* the normal sys.path
+# computation, and that includes the rule that would otherwise put a script's
+# own directory (or, for `-m`, the working directory) on the path. Without
+# this line, running `python\python.exe migrate.py` from the payload root
+# fails with "No module named 'marketa_runtime'", and `-m app.bootstrap` with
+# "No module named 'app'" — both verified on Windows.
 cat > "$PAYLOAD_DIR/python/$PYTHON_PTH" <<PTH
 python$(echo "$PYTHON_VERSION" | cut -d. -f1,2 | tr -d .).zip
 .
+..
 Lib\\site-packages
 import site
 PTH
@@ -190,6 +199,13 @@ rsync -a "$FRONTEND_DIR/dist/" "$PAYLOAD_DIR/app/static/"
 cp "$INSTALLER_DIR/runtime/"*.py "$PAYLOAD_DIR/"
 cp "$INSTALLER_DIR/runtime/MARKETA.vbs" "$PAYLOAD_DIR/"
 
+# The self-tests travel with the package on purpose. They are a few KB, they
+# import nothing that is not already here, and when a shop says "it stopped
+# working" they answer — from that machine, not from a guess — whether the
+# runtime, the port and the database are healthy.
+mkdir -p "$PAYLOAD_DIR/tests"
+cp "$INSTALLER_DIR/tests/"*.py "$PAYLOAD_DIR/tests/"
+
 # ── Sanity checks ────────────────────────────────────────────────────────
 step "Checking the payload"
 
@@ -199,6 +215,10 @@ step "Checking the payload"
 [[ -d "$PAYLOAD_DIR/python/Lib/site-packages/fastapi" ]] || die "fastapi is missing."
 [[ -d "$PAYLOAD_DIR/python/Lib/site-packages/tzdata" ]] || die "tzdata is missing (Asia/Tehran would not resolve)."
 [[ -f "$PAYLOAD_DIR/app/bootstrap.py" ]] || die "bootstrap.py is missing."
+[[ -f "$PAYLOAD_DIR/create_admin.py" ]] || die "create_admin.py is missing."
+[[ -f "$PAYLOAD_DIR/tests/selftest.py" ]] || die "the self-tests are missing."
+grep -qx '\.\.' "$PAYLOAD_DIR/python/$PYTHON_PTH" \
+    || die "the payload root is not on the embedded interpreter's path (see the _pth note above)."
 [[ -f "$PAYLOAD_DIR/alembic/env.py" ]] || die "the migration chain is missing."
 if find "$PAYLOAD_DIR/python/Lib/site-packages" -name '*.so' -print -quit | grep -q .; then
     die "Linux shared objects in the payload — the dependency set was resolved for the wrong platform."

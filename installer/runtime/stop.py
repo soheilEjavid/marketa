@@ -15,6 +15,27 @@ _PID_FILE_NAME = "marketa.pid"
 _OUR_IMAGES = {"python.exe", "pythonw.exe"}
 
 
+def _parse_tasklist_image(stdout: str) -> str | None:
+    """The image name out of `tasklist /NH /FO CSV`, or None for no match.
+
+    Parsed strictly, because tasklist reports "nothing matched" on *stdout*
+    and with exit code 0: `INFO: No tasks are running which match the
+    specified criteria.` Splitting that on commas yields the whole sentence
+    as an "image name", which then looks like a PID belonging to another
+    program — so a server that died without cleaning up produced "this PID
+    belongs to INFO: No tasks are running..., not MARKETA" and a failure
+    exit, instead of simply tidying the stale file away.
+
+    A real row is CSV-quoted, so requiring the leading quote separates the
+    two cases exactly.
+    """
+    for line in stdout.strip().splitlines():
+        line = line.strip()
+        if line.startswith('"'):
+            return line.split(",")[0].strip('"') or None
+    return None
+
+
 def _image_name(pid: int) -> str | None:
     """The executable behind a PID, or None if nothing is running under it."""
     completed = subprocess.run(
@@ -23,8 +44,7 @@ def _image_name(pid: int) -> str | None:
         text=True,
         check=False,
     )
-    first_field = completed.stdout.strip().split(",")[0].strip('"')
-    return first_field or None
+    return _parse_tasklist_image(completed.stdout)
 
 
 def main() -> int:
@@ -49,6 +69,7 @@ def main() -> int:
         # file is the only thing left to tidy.
         logger.info("PID %s is not running; clearing the stale PID file.", pid)
         pid_file.unlink(missing_ok=True)
+        print("MARKETA was not running; cleared a leftover PID file.")
         return 0
     if image.lower() not in _OUR_IMAGES:
         # Windows reuses PIDs. Killing whatever inherited this one — which

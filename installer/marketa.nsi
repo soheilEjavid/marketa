@@ -351,7 +351,11 @@ Section "$(TEXT_SecMain)" SecMain
         FileOpen $1 "$PLUGINSDIR\admin-password.txt" w
         FileWrite $1 "$AdminPassword"
         FileClose $1
-        nsExec::ExecToLog '"$INSTDIR\python\python.exe" -m app.bootstrap --username "$AdminUser" --full-name "$AdminName" --password-file "$PLUGINSDIR\admin-password.txt"'
+        ; create_admin.py and not `-m app.bootstrap`: the wrapper makes the
+        ; data directory the working directory first, which is where .env
+        ; lives. Called directly, bootstrap starts in the program directory,
+        ; finds no SECRET_KEY and dies in configuration validation.
+        nsExec::ExecToLog '"$INSTDIR\python\python.exe" "$INSTDIR\create_admin.py" --username "$AdminUser" --full-name "$AdminName" --password-file "$PLUGINSDIR\admin-password.txt"'
         Pop $0
         Delete "$PLUGINSDIR\admin-password.txt"
         ${If} $0 != 0
