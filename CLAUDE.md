@@ -156,6 +156,16 @@ match that when adding accounting logic; asserting "it runs" is not a test here.
 
 - `with_for_update()` is a **no-op on SQLite**, so concurrent overselling is
   possible in dev and only Postgres actually enforces the lock.
+- The reverse asymmetry also exists, and it bites in the opposite direction.
+  `app/bootstrap.py::create_first_admin` guards itself with a single atomic
+  `INSERT ... SELECT ... WHERE NOT EXISTS (SELECT 1 FROM users)` instead of a
+  check-then-act. SQLite serializes writers, so there that is a hard
+  guarantee — but **on PostgreSQL at READ COMMITTED two concurrent
+  transactions can each see an empty table and each insert a differently
+  named admin**, since the unique index on `username` only stops identical
+  ones. Postgres is the production target, so if you ever move that function
+  (or write another "create this only if the table is still empty" guard)
+  into an HTTP path, it needs a table-level lock to be correct there.
 - There is no auth bypass. `DEV_DISABLE_AUTH` was removed before the first shop
   deployment — don't reintroduce one; seed the users and log in.
 - Seeded logins: `admin`/`Admin@123`, `cashier`/`Cashier@123`,
@@ -166,4 +176,8 @@ match that when adding accounting logic; asserting "it runs" is not a test here.
   (including `InventoryTransaction.timestamp`). If you add a table that carries a
   timestamp, back-date it there too or the demo data will claim a year of history
   happened today.
-- `.env.example` references a `TODO.md` that no longer exists.
+- The shop's Windows package is built by `installer/build.sh` and documented
+  in `installer/README.md`. Two things about it constrain backend changes:
+  `app/seed.py` is deliberately not in the payload (the build asserts this),
+  and the built frontend is served by the API process itself via
+  `app/web.py`, whose SPA catch-all must stay the last route registered.
