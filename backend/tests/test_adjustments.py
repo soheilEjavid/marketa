@@ -48,7 +48,7 @@ def test_adjust_stock_increases_quantity_and_creates_transaction() -> None:
 
     with Session(engine) as database:
         product = create_product(database, name="Sugar", stock="10")
-        result = adjust_stock(database, product.id, Decimal("5"))
+        result = adjust_stock(database, product.id, Decimal("5"), reason="اصلاح انبارگردانی")
         database.refresh(product)
 
         assert result.stock_quantity == Decimal("15.000")
@@ -65,7 +65,7 @@ def test_adjust_stock_decreases_quantity() -> None:
 
     with Session(engine) as database:
         product = create_product(database, name="Sugar", stock="10")
-        adjust_stock(database, product.id, Decimal("-3"))
+        adjust_stock(database, product.id, Decimal("-3"), reason="ضایعات")
         database.refresh(product)
         assert product.stock_quantity == Decimal("7.000")
 
@@ -77,7 +77,7 @@ def test_adjust_stock_raises_on_negative_stock() -> None:
     with Session(engine) as database:
         product = create_product(database, name="Sugar", stock="2")
         with pytest.raises(AdjustmentError, match="Insufficient stock"):
-            adjust_stock(database, product.id, Decimal("-5"))
+            adjust_stock(database, product.id, Decimal("-5"), reason="ضایعات")
 
 
 def test_adjust_stock_raises_on_missing_product() -> None:
@@ -86,7 +86,7 @@ def test_adjust_stock_raises_on_missing_product() -> None:
 
     with Session(engine) as database:
         with pytest.raises(ProductNotFoundError):
-            adjust_stock(database, 999, Decimal("5"))
+            adjust_stock(database, 999, Decimal("5"), reason="اصلاح انبارگردانی")
 
 
 def test_return_sale_items_restores_stock() -> None:

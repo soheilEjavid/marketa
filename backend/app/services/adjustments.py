@@ -44,7 +44,7 @@ def adjust_stock(
     database: Session,
     product_id: int,
     quantity_change: Decimal,
-    reason: str | None = None,
+    reason: str,
 ) -> Product:
     """Adjust stock for a product. Positive = increase, negative = decrease
     (spoilage, breakage, theft, a miscount found during a stocktake).
@@ -64,6 +64,15 @@ def adjust_stock(
 
     if quantity_change == 0:
         raise AdjustmentError("A stock adjustment cannot be zero")
+
+    # Mandatory, and not decoration. A stock figure that moved without a
+    # purchase or a sale behind it is the one number nobody can later
+    # explain — "12 fewer, no reason given" is indistinguishable from a
+    # miscount, a breakage and a theft. Every other sensitive manual action
+    # here takes a reason for the same purpose (invoice edit, invoice
+    # cancellation, manual loyalty adjustment).
+    if not reason or not reason.strip():
+        raise AdjustmentError("A reason is required for a stock adjustment")
 
     if product.stock_quantity + quantity_change < 0:
         raise AdjustmentError(

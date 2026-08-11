@@ -329,9 +329,18 @@ def test_stock_can_be_written_off_and_never_below_zero() -> None:
         assert product.stock_quantity == Decimal("7.000")
 
         with pytest.raises(AdjustmentError, match="Insufficient stock"):
-            adjust_stock(database, product.id, Decimal("-99"))
+            adjust_stock(database, product.id, Decimal("-99"), reason="ضایعات")
         with pytest.raises(AdjustmentError, match="cannot be zero"):
-            adjust_stock(database, product.id, Decimal("0"))
+            adjust_stock(database, product.id, Decimal("0"), reason="ضایعات")
+
+        # A movement with no purchase or sale behind it has to say what
+        # happened, or "3 fewer" is indistinguishable from a miscount, a
+        # breakage and a theft.
+        with pytest.raises(AdjustmentError, match="reason is required"):
+            adjust_stock(database, product.id, Decimal("-1"), reason="   ")
+
+        database.refresh(product)
+        assert product.stock_quantity == Decimal("7.000"), "a refused adjustment moves nothing"
 
 
 # ── Till reconciliation ──────────────────────────────────────────────────

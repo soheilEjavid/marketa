@@ -35,7 +35,11 @@ export const canRecordPayments = (role: string) => has(role, ["admin", "cashier"
 // sales.py: allow_credit_override past a customer's credit_limit = admin,manager
 export const canOverrideCreditLimit = (role: string) => has(role, ["admin", "manager"]);
 // adjustments.py stock/purchase-return: admin,inventory_manager
-export const canAdjustStock = (role: string) => has(role, ["admin", "inventory_manager"]);
+// adjustments.py /stock: admin,manager,inventory_manager — a manual stock
+// movement is a financial event (it changes what the shelf is worth), so it
+// sits with the roles that may edit an invoice, plus the one whose whole job
+// is the stockroom.
+export const canAdjustStock = (role: string) => has(role, ["admin", "manager", "inventory_manager"]);
 // checks.py READ_ROLES: admin,inventory_manager,manager,accountant (no cashier)
 export const canViewChecks = (role: string) => has(role, ["admin", "inventory_manager", "manager", "accountant"]);
 // checks.py WRITE_ROLES: admin,inventory_manager,manager (no cashier)

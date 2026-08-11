@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
+  Boxes,
   GitMerge,
   Layers,
   Package,
@@ -18,11 +19,12 @@ import type { Category, Product } from "../types";
 import { Modal } from "../components/Modal";
 import { CategoryManagerModal } from "../components/CategoryManagerModal";
 import { ProductFormModal } from "../components/ProductFormModal";
+import { StockAdjustModal } from "../components/StockAdjustModal";
 import { getStockStatus } from "../lib/stockStatus";
 import { daysUntilExpiry, getExpiryStatus } from "../lib/expiryStatus";
 import { calculateMarginPct, formatMarginPct, getMarginStatus } from "../lib/margin";
 import { isoToJalaliStr } from "../utils/jalali";
-import { canManageProducts } from "../permissions";
+import { canAdjustStock, canManageProducts } from "../permissions";
 import { getSession } from "../session";
 
 type SortKey = "name" | "purchase_price" | "sale_price" | "stock_quantity";
@@ -30,6 +32,7 @@ type SortKey = "name" | "purchase_price" | "sale_price" | "stock_quantity";
 export function Products() {
   const { t, money, number, language } = useI18n();
   const canManage = canManageProducts(getSession()?.role ?? "");
+  const canAdjust = canAdjustStock(getSession()?.role ?? "");
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,6 +77,7 @@ export function Products() {
   const [showForm, setShowForm] = useState(false);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [deactivating, setDeactivating] = useState(false);
 
@@ -419,6 +423,16 @@ export function Products() {
                         <button className="icon-button" title={t("edit")} onClick={() => openEdit(product)}>
                           <Pencil size={16} />
                         </button>
+                        {canAdjust && product.is_active && (
+                          <button
+                            className="icon-button"
+                            title={t("adjustStock")}
+                            aria-label={t("adjustStock")}
+                            onClick={() => setAdjustingProduct(product)}
+                          >
+                            <Boxes size={16} />
+                          </button>
+                        )}
                         {product.is_active ? (
                           <button
                             className="icon-button danger"
@@ -455,6 +469,17 @@ export function Products() {
           )}
         </div>
       </section>
+
+      {adjustingProduct && (
+        <StockAdjustModal
+          product={adjustingProduct}
+          onClose={() => setAdjustingProduct(null)}
+          onAdjusted={(updated) => {
+            setProducts((current) => current.map((p) => (p.id === updated.id ? updated : p)));
+            setAdjustingProduct(null);
+          }}
+        />
+      )}
 
       {showForm && (
         <ProductFormModal

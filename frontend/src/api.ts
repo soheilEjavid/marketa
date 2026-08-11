@@ -412,6 +412,23 @@ export async function cancelSale(
   });
 }
 
+/**
+ * Move stock by hand. Goes through the inventory ledger like every other
+ * stock change, which is why the product form cannot edit stock_quantity
+ * directly — see StockAdjustModal for the reasoning. The reason is required
+ * by the server, not merely by the form.
+ */
+export async function adjustStock(body: {
+  product_id: number;
+  quantity_change: number;
+  reason: string;
+}): Promise<{ product: Product; quantity_change: string; reason: string }> {
+  return request(`${apiBaseUrl}/adjustments/stock`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export async function getSale(saleId: number): Promise<Sale> {
   return request<Sale>(`${apiBaseUrl}/sales/${saleId}`);
 }
