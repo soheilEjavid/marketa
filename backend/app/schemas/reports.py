@@ -177,6 +177,20 @@ class VolumeDeclineRow(BaseModel):
     pct_change: Decimal
 
 
+class WithdrawableProfitReport(BaseModel):
+    """Book profit split into the part that must go back into the stockroom
+    and the part the shopkeeper can actually take out."""
+
+    book_profit: Decimal
+    restock_share: Decimal
+    withdrawable_profit: Decimal
+    products_counted: int
+    # How many of those had no purchase invoice in range, so their own
+    # recorded cost stood in for a replacement price. Shown in the UI so a
+    # figure resting on estimates is not read as exact.
+    products_with_estimated_cost: int
+
+
 class InflationRateReport(BaseModel):
     cost_inflation_pct: Decimal | None
     price_inflation_pct: Decimal | None

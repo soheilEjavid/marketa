@@ -21,6 +21,7 @@ import type {
   ExpenseInput,
   ExpensePaymentMethod,
   InflationRateReport,
+  WithdrawableProfitReport,
   InventoryTransaction,
   InventoryTransactionType,
   LoyaltyBalance,
@@ -622,6 +623,19 @@ export async function getInflationRate(params: {
     period2_end: params.period2End,
   });
   return request<InflationRateReport>(`${apiBaseUrl}/reports/inflation-rate?${query.toString()}`);
+}
+
+export async function getWithdrawableProfit(params: {
+  periodStart: string;
+  periodEnd: string;
+}): Promise<WithdrawableProfitReport> {
+  const query = new URLSearchParams({
+    period_start: params.periodStart,
+    period_end: params.periodEnd,
+  });
+  return request<WithdrawableProfitReport>(
+    `${apiBaseUrl}/reports/withdrawable-profit?${query.toString()}`,
+  );
 }
 
 export async function getExpenses(params: { fromDate?: string; toDate?: string } = {}): Promise<Expense[]> {

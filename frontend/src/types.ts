@@ -658,6 +658,14 @@ export type InflationRateReport = {
   by_category: CategoryInflationRow[];
 };
 
+export type WithdrawableProfitReport = {
+  book_profit: string;
+  restock_share: string;
+  withdrawable_profit: string;
+  products_counted: number;
+  products_with_estimated_cost: number;
+};
+
 export type ExpensePaymentMethod = "cash" | "bank";
 
 export type Expense = {

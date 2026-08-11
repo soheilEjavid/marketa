@@ -25,6 +25,7 @@ from app.schemas.reports import (
     PaymentMethodBreakdown,
     ProductSalesSummary,
     SupplierBalanceSummary,
+    WithdrawableProfitReport,
 )
 from app.services import reports as report_service
 from app.services.audit import record_audit
@@ -120,6 +121,18 @@ async def get_inflation_rate(
         period2_start=period2_start,
         period2_end=period2_end,
     )
+
+
+@router.get("/withdrawable-profit", response_model=WithdrawableProfitReport)
+async def get_withdrawable_profit(
+    database: DatabaseSession,
+    period_start: date,
+    period_end: date,
+    # Sits beside the inflation report on the same page and answers the same
+    # kind of question, so it takes the same audience.
+    _: UserModel = Depends(require_role(*READ_ROLES)),
+):
+    return report_service.replacement_cost_of_sales(database, period_start, period_end)
 
 
 @router.get("/net-profit", response_model=NetProfitReport)

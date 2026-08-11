@@ -803,6 +803,11 @@ def supplier_balances(database: Session) -> list[dict]:
 # instead of a number, store-wide and independently per category.
 MIN_COMMON_PRODUCTS = 5
 
+# A purchase price older than this is unlikely to be what the goods would
+# cost today, so the replacement figure built on it is flagged as an
+# estimate rather than dropped.
+STALE_COST_DAYS = 90
+
 
 @dataclass
 class _ProductPeriodRow:
@@ -1199,6 +1204,101 @@ def inflation_rate(
         "top_price_increases": biggest_price_increases(rows),
         "top_volume_decliners": biggest_volume_decliners(rows),
         "by_category": category_inflation_breakdown(rows),
+    }
+
+
+def replacement_cost_of_sales(database: Session, period_start: date, period_end: date) -> dict:
+    """How much of the period's profit has to go back into the stockroom.
+
+    An invoice records what the goods cost when they were bought. If they
+    cost more to replace today, part of the profit on that invoice is not
+    profit at all — it is the difference the shop must find to put the same
+    goods back on the shelf. Take it out as earnings and the stock shrinks
+    every cycle while every report stays green, which is exactly the failure
+    a shopkeeper cannot see coming.
+
+    Rice bought at 100,000 and sold at 120,000 shows 20,000. If rice now
+    costs 110,000, only 10,000 of that is really theirs.
+
+    Replacement cost is the newest purchase price **as at the end of the
+    period being reported**, not today's. Using today's would make an old
+    month look worse every month that passes: the same May would read 35%
+    swallowed in August and more in December, which says nothing about May
+    and everything about how long ago it was. Measured both ways on real
+    data — May 2026 came out at 35.3% against today's prices and 3.1%
+    against May's own, while July read 5.2% and 4.3%. Only the second pair
+    is comparable.
+
+    A line never purchased in the window keeps whatever it last cost; it is
+    flagged rather than dropped, because quietly leaving stock out of the
+    figure understates the very number this exists to raise.
+    """
+    latest_cost: dict[int, Decimal] = {}
+    stale: set[int] = set()
+    for product_id, unit_cost, bought_on in database.execute(
+        select(PurchaseItem.product_id, PurchaseItem.unit_cost, business_day(Purchase.created_at))
+        .join(Purchase, Purchase.id == PurchaseItem.purchase_id)
+        .where(
+            Purchase.status == DocumentStatus.COMPLETED,
+            PurchaseItem.unit_cost > 0,
+            business_day(Purchase.created_at) <= period_end,
+        )
+        .order_by(PurchaseItem.product_id, Purchase.created_at.desc())
+    ).all():
+        if product_id not in latest_cost:
+            latest_cost[product_id] = Decimal(str(unit_cost))
+            # "Long enough ago that the price is probably no longer current."
+            if bought_on is not None and (period_end - bought_on).days > STALE_COST_DAYS:
+                stale.add(product_id)
+
+    sold = database.execute(
+        select(
+            SaleItem.product_id,
+            func.sum(SaleItem.quantity),
+            func.sum(SaleItem.cost_price * SaleItem.quantity),
+        )
+        .join(Sale, Sale.id == SaleItem.sale_id)
+        .where(
+            Sale.status == DocumentStatus.COMPLETED,
+            business_day(Sale.created_at) >= period_start,
+            business_day(Sale.created_at) <= period_end,
+        )
+        .group_by(SaleItem.product_id)
+    ).all()
+
+    cost_when_sold = Decimal("0")
+    cost_to_replace = Decimal("0")
+    estimated = 0
+    for product_id, quantity, cost in sold:
+        quantity, cost = Decimal(str(quantity)), Decimal(str(cost))
+        cost_when_sold += cost
+        unit_now = latest_cost.get(product_id)
+        if unit_now is None:
+            # Never bought through a purchase invoice — opening stock, say.
+            # Its own recorded cost is the best figure available.
+            cost_to_replace += cost
+            estimated += 1
+            continue
+        if product_id in stale:
+            estimated += 1
+        cost_to_replace += unit_now * quantity
+
+    gross = sum(
+        (row["profit"] for row in daily_sales_summary(database, from_date=period_start, to_date=period_end)),
+        Decimal("0"),
+    )
+    # A unit cost is Numeric(14, 2) and a quantity Numeric(14, 3), so their
+    # product carries five decimals. Money in this app has two.
+    set_aside = (cost_to_replace - cost_when_sold).quantize(Decimal("0.01"))
+    return {
+        "book_profit": gross,
+        "restock_share": set_aside,
+        "withdrawable_profit": (gross - set_aside).quantize(Decimal("0.01")),
+        # How much of the answer rests on a price that may no longer be
+        # current — shown rather than hidden, since a silent understatement
+        # defeats the point.
+        "products_with_estimated_cost": estimated,
+        "products_counted": len(sold),
     }
 
 

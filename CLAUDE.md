@@ -262,6 +262,38 @@ discounts were exactly zero and the invoice-level discount rate moved 0.212% →
 it by 0.0032 percentage points. Not worth changing the index for. Re-measure
 before concluding the same if discounting behaviour changes.
 
+### Withdrawable profit — the same page, a different question
+
+`replacement_cost_of_sales()` sits beside the index and answers what the index
+cannot: how much of the reported profit is really the shopkeeper's. An invoice
+records what the goods cost when they were bought; if they cost more to replace,
+that difference is not earnings, it is the money needed to put the same goods
+back on the shelf. Rice bought at 100,000 and sold at 120,000 shows 20,000, but
+if rice now costs 110,000 only 10,000 can leave the shop without the stock
+shrinking. Reported as «سود دفتری» / «سهم بازخرید انبار» / «سود واقعی قابل
+برداشت».
+
+Three decisions that look like details and are not:
+
+- **Replacement cost is the newest purchase price as at the end of the reported
+  period, not today's.** Using today's makes an old month look worse every month
+  that passes. Measured on real data: May 2026 read 35.3% swallowed against
+  today's prices and 3.1% against May's own; July read 5.2% and 4.3%. Only the
+  second pair is comparable across months.
+- **`book_profit` comes from `daily_sales_summary()`, not from summing
+  `line_total − cost`.** That helper also subtracts the invoice-level
+  `Sale.discount`, which lives on the sale and never on its lines. Recomputing
+  profit without it overstates July 2026 by 5,225,234.
+- **A product with no purchase invoice in range keeps its own recorded cost and
+  is counted, not dropped.** Dropping it would understate the very figure the
+  section exists to raise; `products_with_estimated_cost` says how many, and the
+  UI prints it.
+
+The section renders outside the index's `insufficient_data` guard on purpose:
+the index needs five products common to both periods before it will say
+anything, this needs none, and folding them together would hide a computable
+figure behind another one's silence.
+
 ## Gotchas
 
 - `with_for_update()` is a **no-op on SQLite**, so concurrent overselling is

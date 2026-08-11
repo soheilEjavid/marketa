@@ -23,6 +23,7 @@ import {
 import {
   getCashierPerformance,
   getInflationRate,
+  getWithdrawableProfit,
   getLoyaltyRedemptions,
   getNearExpiryProducts,
   getNetProfit,
@@ -44,6 +45,7 @@ import type {
   CashierShift,
   DeadStockRow,
   InflationRateReport,
+  WithdrawableProfitReport,
   LoyaltyRedemptionRow,
   NearExpiryRow,
   NetProfitReport,
@@ -347,6 +349,12 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
   const [inflationPeriod, setInflationPeriod] = useState(() => jalaliPresetRange("this-month-vs-last"));
   const [inflationReport, setInflationReport] = useState<InflationRateReport | null>(null);
   const [inflationLoading, setInflationLoading] = useState(true);
+  // Kept separate from the inflation report on purpose: that one needs at
+  // least five products common to both periods before it will say anything,
+  // and this one has no such requirement. Folding them together would hide
+  // a figure that is perfectly computable behind another one's silence.
+  const [withdrawable, setWithdrawable] = useState<WithdrawableProfitReport | null>(null);
+  const [withdrawableLoading, setWithdrawableLoading] = useState(true);
 
   const loadInflationRate = useCallback(async () => {
     setInflationLoading(true);
@@ -369,6 +377,26 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
   useEffect(() => {
     loadInflationRate();
   }, [loadInflationRate]);
+
+  const loadWithdrawable = useCallback(async () => {
+    setWithdrawableLoading(true);
+    try {
+      setWithdrawable(
+        await getWithdrawableProfit({
+          periodStart: inflationPeriod.period2Start,
+          periodEnd: inflationPeriod.period2End,
+        }),
+      );
+    } catch {
+      setWithdrawable(null);
+    } finally {
+      setWithdrawableLoading(false);
+    }
+  }, [inflationPeriod.period2Start, inflationPeriod.period2End]);
+
+  useEffect(() => {
+    loadWithdrawable();
+  }, [loadWithdrawable]);
 
   const [cashierPerformance, setCashierPerformance] = useState<CashierPerformanceRow[]>([]);
   const [shifts, setShifts] = useState<CashierShift[]>([]);
@@ -932,6 +960,66 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
             </div>
           </div>
 
+          {/* Placed above the index, and outside its data-sufficiency guard,
+              because this is the number the shopkeeper came for: how much of
+              the profit is really theirs. It answers for period two only —
+              a single period is all replacement costing needs. */}
+          <div className="panel-heading" style={{ marginTop: 8 }}>
+            <div>
+              <h2>{t("withdrawableProfitTitle")}</h2>
+              <span className="subtle-chip" style={{ marginTop: 6, display: "inline-block" }}>
+                {t("withdrawableProfitSubtitle")}
+              </span>
+            </div>
+          </div>
+          {withdrawableLoading ? (
+            <div className="empty-state compact">{t("loading")}</div>
+          ) : !withdrawable || withdrawable.products_counted === 0 ? (
+            <div className="empty-state compact">{t("noData")}</div>
+          ) : (
+            <>
+              <section className="metric-grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+                <article className="metric-card">
+                  <p>{t("bookProfit")}</p>
+                  <strong>{renderMoney(Number(withdrawable.book_profit))}</strong>
+                  <small className="metric-hint">{t("bookProfitHint")}</small>
+                </article>
+                <article className="metric-card">
+                  <p>{t("restockShare")}</p>
+                  {/* A rising cost is the bad direction here, so the sign is
+                      inverted before colouring: money set aside is a
+                      deduction, not a gain. */}
+                  <strong className={reportBadgeClass(-Number(withdrawable.restock_share))}>
+                    {renderMoney(Number(withdrawable.restock_share))}
+                  </strong>
+                  <small className="metric-hint">{t("restockShareHint")}</small>
+                </article>
+                <article className="metric-card">
+                  <p>{t("withdrawableProfit")}</p>
+                  <strong className={reportBadgeClass(Number(withdrawable.withdrawable_profit))}>
+                    {renderMoney(Number(withdrawable.withdrawable_profit))}
+                  </strong>
+                  <small className="metric-hint">{t("withdrawableProfitHint")}</small>
+                </article>
+              </section>
+              {withdrawable.products_with_estimated_cost > 0 && (
+                <p className="muted-text" style={{ marginTop: 8, fontSize: 12 }}>
+                  {t("withdrawableProfitEstimated")
+                    .replace("{counted}", number(withdrawable.products_counted))
+                    .replace("{estimated}", number(withdrawable.products_with_estimated_cost))}
+                </p>
+              )}
+              <p className="muted-text" style={{ marginTop: 4, fontSize: 12 }}>
+                {t("withdrawableProfitNote")}
+              </p>
+            </>
+          )}
+
+          {/* Not "نرخ تورم" again — the panel already carries that title,
+              and a repeated heading reads as a second, different report. */}
+          <div className="panel-heading" style={{ marginTop: 24 }}>
+            <h2>{t("inflationIndicesTitle")}</h2>
+          </div>
           {inflationLoading ? (
             <div className="empty-state compact">{t("loading")}</div>
           ) : !inflationReport || inflationReport.insufficient_data ? (
