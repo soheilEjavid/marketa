@@ -5,7 +5,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.models.entities import Product
+from app.models.entities import InventoryTransaction, InventoryTransactionType, Product
 from app.schemas.product import ProductCreate, ProductUpdate
 from app.services.audit import record_audit
 
@@ -57,9 +57,39 @@ def get_product(database: Session, product_id: int) -> Product | None:
 
 
 def create_product(database: Session, data: ProductCreate) -> Product:
+    """Add a product, logging any opening stock as a real movement.
+
+    A brand-new product may be entered with stock already on the shelf —
+    a shopkeeper typing up what they have. That quantity used to be written
+    straight to `Product.stock_quantity` with nothing in the inventory
+    ledger to account for it, on the reasoning that a new product has no
+    history to log against.
+
+    It does have one: the units exist. And `stock == Σ inventory movements`
+    is the invariant the whole financial audit rests on, so every product
+    entered that way left a gap the audit reports as an unexplained
+    difference. Worse than the noise itself is what it teaches — once
+    unexplained differences are normal, a real one gets waved through as
+    "just another opening balance". Setting up a shop with five hundred
+    products would have opened five hundred of them.
+    """
     product = Product(**data.model_dump())
     database.add(product)
     try:
+        database.flush()
+        opening = Decimal(str(product.stock_quantity or 0))
+        if opening != 0:
+            # The cost basis of these units is Product.purchase_price, set
+            # on the same row — an InventoryTransaction carries a quantity
+            # and nothing else, which is why the guard below matters.
+            database.add(
+                InventoryTransaction(
+                    product_id=product.id,
+                    quantity_change=opening,
+                    transaction_type=InventoryTransactionType.ADJUSTMENT,
+                    related_id=None,
+                )
+            )
         database.commit()
     except IntegrityError as error:
         database.rollback()

@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def normalize_optional_text(value: str | None) -> str | None:
@@ -49,7 +49,24 @@ class ProductBase(BaseModel):
 
 
 class ProductCreate(ProductBase):
-    pass
+    @model_validator(mode="after")
+    def opening_stock_needs_a_cost(self) -> "ProductCreate":
+        """Stock on the shelf has to have cost something.
+
+        purchase_price defaults to zero, so a product could be entered with
+        an opening quantity and no cost at all. Nothing complains at the
+        time — but that zero becomes the cost basis for those units, and the
+        next delivery blends against it (see
+        products.weighted_average_cost), understating the cost of the line
+        from then on and quietly inflating its margin.
+        """
+        if self.stock_quantity and self.stock_quantity > 0 and self.purchase_price <= 0:
+            raise ValueError(
+                "A product entered with opening stock needs a purchase price — "
+                "those units cost something, and without it every later "
+                "delivery averages against zero."
+            )
+        return self
 
 
 class ProductUpdate(BaseModel):
