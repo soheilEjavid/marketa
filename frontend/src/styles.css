@@ -3506,3 +3506,14 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
   background: var(--danger-soft);
 }
 .cancelled-badge.inline { margin-inline-start: 6px; }
+
+/* A metric whose unit is easy to misread — the goods-sold figure is a
+   change in quantity, not in money, and a bare "−5%" beside three other
+   percentages invites the wrong reading. */
+.metric-card .metric-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+}

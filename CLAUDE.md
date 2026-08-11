@@ -152,6 +152,36 @@ directly rather than going through HTTP. Financial tests hand-compute the
 expected figure (see `test_inflation_rate.py`, `test_returns_accounting.py`) —
 match that when adding accounting logic; asserting "it runs" is not a test here.
 
+### The inflation report measures this shop, not the country
+
+`services/reports.py`'s inflation section is a Laspeyres price index over two
+user-chosen periods, computed from `PurchaseItem.unit_cost` (cost side) and
+`SaleItem.unit_price` (sale side) — always from real invoice lines, never from
+`Product.purchase_price`/`sale_price`. Weighting is by period-1 quantity, only
+products transacted in *both* periods qualify, and fewer than
+`MIN_COMMON_PRODUCTS` (5) returns None rather than a meaningless number. Those
+three choices are deliberate; don't "improve" them.
+
+Four limitations are inherent to the method rather than bugs, and were
+measured and accepted rather than assumed:
+
+- **New products are invisible.** A line that did not exist in period 1 has no
+  comparable price, so it is excluded. If half the range turned over, the index
+  still speaks as though it covers the shop.
+- **Switching supplier looks like falling inflation.** The index sees price,
+  not quality or brand.
+- **Laspeyres overstates.** Holding the basket fixed ignores substitution — the
+  same criticism made of official CPI.
+- **Periods need not be the same length** and nothing warns when they are not;
+  comparing a week against a month produces a number with no clear meaning.
+
+A fifth — that the sale-side index reads pre-discount `unit_price` and so
+cannot see discounting — was measured on real data (2026-08): item-level
+discounts were exactly zero and the invoice-level discount rate moved 0.212% →
+0.216% between periods, so recomputing the index net of every discount shifted
+it by 0.0032 percentage points. Not worth changing the index for. Re-measure
+before concluding the same if discounting behaviour changes.
+
 ## Gotchas
 
 - `with_for_update()` is a **no-op on SQLite**, so concurrent overselling is

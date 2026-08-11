@@ -979,6 +979,7 @@ export function Reports({ onNavigate }: ReportsProps = {}) {
                   <strong className={reportBadgeClass(Number(inflationReport.volume_index_pct))}>
                     {formatSignedPct(Number(inflationReport.volume_index_pct), number)}
                   </strong>
+                  <small className="metric-hint">{t("volumeIndexHint")}</small>
                 </article>
                 <article className="metric-card">
                   <p>{t("realProfitIndex")}</p>
