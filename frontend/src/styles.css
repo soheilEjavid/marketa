@@ -3460,3 +3460,31 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
   }
   .receipt-page { max-width: none; padding: 0; }
 }
+
+/* ── Keyboard checkout: which stage owns the Enter key ────────────────────
+   A cashier working a queue presses Enter three times for three different
+   things — done scanning, take the money, next customer. Glancing at the
+   screen has to answer "what will Enter do now?" without reading anything,
+   so the panel holding the keyboard carries a ring in the accent colour.
+   Outline rather than border: it draws outside the box, so nothing inside
+   either panel shifts by a pixel when the stage changes. */
+.product-browser.stage-active,
+.cart-panel.stage-active {
+  outline: 2px solid var(--orange);
+  outline-offset: 2px;
+}
+
+/* The payment area is a focus target in its own right (Enter finalizes,
+   Esc goes back), but it is a wrapper the cashier never clicks, so it must
+   not paint a second ring inside the one the cart panel already has. */
+.payment-stage:focus,
+.payment-stage:focus-visible {
+  outline: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .product-browser,
+  .cart-panel {
+    transition: outline-color 120ms ease;
+  }
+}

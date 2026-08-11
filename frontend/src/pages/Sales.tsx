@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   CheckCircle2,
   ChevronDown,
@@ -82,7 +82,7 @@ function lineUnitPrice(line: CartLine): number {
 }
 
 export function Sales() {
-  const { money, number, t, locale } = useI18n();
+  const { money, number, t, locale, direction } = useI18n();
   /**
    * The scanner is a keyboard: it types the barcode and presses Enter, into
    * whatever happens to have focus. So the search box has to *hold* focus
@@ -91,6 +91,23 @@ export function Sales() {
    * scanner, because it looks like it worked.
    */
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const paymentSectionRef = useRef<HTMLDivElement>(null);
+  /**
+   * Which leg of the keyboard checkout has the keyboard.
+   *
+   * A cashier working a queue never touches the mouse: scan, scan, Enter to
+   * say "done scanning", Enter to take the money, Enter to start the next
+   * customer. Enter means something different at each of those points, so
+   * the screen has to say which one it is on — hence the ring drawn around
+   * the active panel. The receipt is its own leg and is driven by `receipt`
+   * rather than this, since that view replaces the whole page.
+   */
+  const [stage, setStage] = useState<"scan" | "payment">("scan");
+  /** Bumped whenever the keyboard should land on the chosen tender pill —
+   * entering the payment stage, or stepping with the arrows. Focus follows
+   * in a layout effect so it runs after React has painted the pill it is
+   * aiming at, which a requestAnimationFrame does not guarantee. */
+  const [pillFocusToken, setPillFocusToken] = useState(0);
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -162,6 +179,7 @@ export function Sales() {
 
   /** Hand the keyboard back to the scanner. */
   const focusSearch = useCallback(() => {
+    setStage("scan");
     // A frame later, so it wins against whatever is closing: a modal
     // restoring focus to its trigger, a freshly-rendered cart line, the
     // autoFocus on a discount box.
@@ -178,6 +196,37 @@ export function Sales() {
     if (receipt || creditLimitError || loyaltyPrompt || viewingSaleId) return;
     focusSearch();
   }, [tab, receipt, creditLimitError, loyaltyPrompt, viewingSaleId, focusSearch]);
+
+  // Put the keyboard on the chosen tender pill once React has actually
+  // painted it. Land on the selected one so the arrows step from what the
+  // cashier is looking at; asking for any button instead would catch "add
+  // another payment line", which sits earlier in the DOM.
+  useLayoutEffect(() => {
+    if (!pillFocusToken || stage !== "payment") return;
+    const section = paymentSectionRef.current;
+    const target =
+      section?.querySelector<HTMLElement>(".payment-line-row .price-tier-selected") ??
+      section?.querySelector<HTMLElement>(".payment-line-row .price-tier-button");
+    (target ?? section)?.focus();
+  }, [pillFocusToken, stage]);
+
+  // Enter on the receipt starts the next customer — the same thing the
+  // "فروش جدید" button does. Bound to the document rather than to a node
+  // because the receipt view has no single element that reliably holds
+  // focus, and there is nothing else on screen for Enter to mean here.
+  useEffect(() => {
+    if (!receipt) return;
+    function handleKey(event: KeyboardEvent) {
+      if (event.key !== "Enter") return;
+      // Unless the cashier is on the print button and means to press it.
+      if (document.activeElement instanceof HTMLButtonElement) return;
+      event.preventDefault();
+      setReceipt(null);
+      setLoyaltyPrompt(null);
+    }
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [receipt]);
 
   const filteredProducts = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -207,6 +256,26 @@ export function Sales() {
   );
   const remainingAfterPayment = Math.max(0, total - paidTotal);
   const paymentExceedsTotal = paidTotal > total;
+
+  /**
+   * Why the sale cannot be rung up yet, or null when it can.
+   *
+   * The submit button has always known this — it just expressed it as a
+   * `disabled` expression, which tells a cashier nothing. Naming each
+   * reason lets the Enter key say what is wrong instead of doing nothing,
+   * and keeps the button and the keyboard path on one rule rather than two
+   * that can drift.
+   */
+  const checkoutBlockedReason: string | null =
+    !cart.length
+      ? t("cartEmptyHint")
+      : status === "submitting"
+        ? t("loading")
+        : paymentExceedsTotal
+          ? t("paymentExceedsTotal")
+          : remainingAfterPayment > 0 && !customerId
+            ? t("creditNeedsCustomer")
+            : null;
   // Which single method (if any) all entered payment lines share so far —
   // used to name the covering method for the remaining-balance hint below
   // (e.g. "card entered -> remainder collected in cash"). Ambiguous once
@@ -344,7 +413,18 @@ export function Sales() {
   function handleSearchKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key !== "Enter") return;
     const scanned = query.trim();
-    if (!scanned) return;
+
+    // Enter on an empty box is the cashier saying "that's everything" — not
+    // a scan of nothing. No lookup is attempted; the keyboard moves on to
+    // taking the money. With an empty cart there is nothing to move on to,
+    // so it does nothing at all rather than opening a payment line for a
+    // sale that does not exist yet.
+    if (!scanned) {
+      if (!cart.length) return;
+      event.preventDefault();
+      goToPayment();
+      return;
+    }
 
     const matches = products.filter((product) => product.barcode === scanned);
     if (matches.length === 0) return; // not a barcode — leave the grid filtered
@@ -365,6 +445,93 @@ export function Sales() {
     addProduct(matches[0]);
     setQuery("");
     focusSearch();
+  }
+
+  /**
+   * Hand the keyboard to the payment section, opening a line if there is
+   * none.
+   *
+   * Without that line there is nothing in the payment area but a link, no
+   * method is chosen, and the submit button is disabled — an empty payment
+   * section means a credit sale, which needs a customer. So "Enter, Enter"
+   * would dead-end on the very sale it is meant to speed up: a walk-in
+   * paying now. The line it opens is the ordinary one addPaymentLine()
+   * makes by hand — card, for the whole remaining amount — so the keyboard
+   * path and the mouse path produce the same invoice.
+   */
+  function goToPayment() {
+    if (!paymentLines.length) addPaymentLine();
+    setStage("payment");
+    // Focusing happens in the effect below, not here: the payment line this
+    // may have just opened does not exist in the DOM yet, and a
+    // requestAnimationFrame can still run before React has painted it —
+    // which left the keyboard on nothing and the first arrow press doing
+    // nothing.
+    setPillFocusToken((token) => token + 1);
+  }
+
+  /** Order of the method pills as they are rendered. */
+  const PAYMENT_METHODS: SalePaymentMethod[] = ["cash", "card", "card_to_card"];
+
+  /**
+   * Left/right step through نقدی / کارت / کارت به کارت.
+   *
+   * The arrows follow the eye, not the DOM: the layout flips with the
+   * language, so in the Persian (RTL) interface the pill to the *left* of
+   * the current one is the next in order, and in English it is the
+   * previous. Getting that backwards would have the selection crawl the
+   * wrong way down the row, which is the sort of thing that reads as a
+   * broken keyboard rather than a convention.
+   */
+  function stepPaymentMethod(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (!paymentLines.length) return;
+    // The line the cashier is actually on, or the only one there is.
+    const row = (document.activeElement as HTMLElement | null)?.closest(".payment-line-row");
+    const rows = Array.from(document.querySelectorAll(".payment-line-row"));
+    const line = paymentLines[row ? Math.max(0, rows.indexOf(row)) : 0];
+    if (!line) return;
+
+    const forward = direction === "rtl" ? event.key === "ArrowLeft" : event.key === "ArrowRight";
+    const current = PAYMENT_METHODS.indexOf(line.method);
+    const next = PAYMENT_METHODS[
+      (current + (forward ? 1 : PAYMENT_METHODS.length - 1)) % PAYMENT_METHODS.length
+    ];
+    updatePaymentLine(line.key, { method: next });
+    // Keep the keyboard on the pill that is now selected, so the next arrow
+    // steps from where the cashier is looking. Same reason as goToPayment:
+    // the selected class moves on the next render, so the focus has to wait
+    // for it rather than race it.
+    setPillFocusToken((token) => token + 1);
+  }
+
+  /** Enter finalizes, Esc goes back to scanning, arrows pick the tender. */
+  function handlePaymentKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      stepPaymentMethod(event);
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      // Deliberately leaves the cart, the payment line and any typed amount
+      // exactly as they are — the cashier is stepping back to scan one more
+      // item, not abandoning the sale.
+      focusSearch();
+      return;
+    }
+    if (event.key !== "Enter") return;
+    // A method pill or the remove button would otherwise fire its own click
+    // on Enter, silently changing the payment instead of submitting it.
+    event.preventDefault();
+
+    if (checkoutBlockedReason) {
+      // Say what is missing and stay put, so the cashier can fix it and
+      // press Enter again without re-entering anything.
+      setStatus("error");
+      setMessage(checkoutBlockedReason);
+      return;
+    }
+    checkout();
   }
 
   function setPriceTier(productId: number, tier: "old" | "new") {
@@ -732,7 +899,7 @@ export function Sales() {
         <HeldSalesTab onResume={resumeHeldSale} />
       ) : (
       <section className="workspace-grid">
-        <article className="panel product-browser">
+        <article className={`panel product-browser ${stage === "scan" ? "stage-active" : ""}`}>
           <label className="search-field">
             <Search size={18} />
             <input
@@ -808,7 +975,7 @@ export function Sales() {
           </div>
         </article>
 
-        <aside className="panel cart-panel">
+        <aside className={`panel cart-panel ${stage === "payment" ? "stage-active" : ""}`}>
           {heldSales.length > 0 && (
             <div className="held-invoice-tabs">
               {heldSales.map((sale, index) => {
@@ -1048,6 +1215,13 @@ export function Sales() {
               bordered header+hint-text panel it isn't using. The panel
               (with its header, since >=1 line now needs the "add another"
               button and remove controls) only renders once a line exists. */}
+          <div
+            ref={paymentSectionRef}
+            className="payment-stage"
+            tabIndex={-1}
+            onKeyDown={handlePaymentKeyDown}
+            onFocus={() => setStage("payment")}
+          >
           {paymentLines.length === 0 ? (
             <div className="payment-collapsed-row">
               <button type="button" className="add-discount-link" onClick={addPaymentLine}>
@@ -1141,6 +1315,7 @@ export function Sales() {
             )}
           </div>
           )}
+          </div>
 
           {(itemDiscountsTotal > 0 || invoiceDiscountValue > 0) && (
             <>
