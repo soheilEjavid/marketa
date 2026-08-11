@@ -1,14 +1,15 @@
 import { useEffect, useState } from "react";
-import { ArrowLeft, History, Pencil, Printer } from "lucide-react";
+import { ArrowLeft, Ban, History, Pencil, Printer } from "lucide-react";
 
-import { getAuditLogs, getCustomers, getProducts, getSale } from "../api";
+import { cancelSale, getAuditLogs, getCustomers, getErrorMessage, getProducts, getSale } from "../api";
 import { useI18n } from "../i18n";
 import { calculateInvoiceMargin, calculateMarginPct, formatMarginPct, getMarginStatus } from "../lib/margin";
 import { formatQuantityWithUnit } from "../lib/quantity";
-import { canEditSale } from "../permissions";
+import { canCancelSale, canEditSale } from "../permissions";
 import { getSession } from "../session";
 import type { AuditLogEntry, Sale } from "../types";
 import { dateToJalaliStr } from "../utils/jalali";
+import { Modal } from "./Modal";
 import { SaleEditForm } from "./SaleEditForm";
 
 type SaleDetailViewProps = {
@@ -38,6 +39,10 @@ export function SaleDetailView({ saleId, onBack }: SaleDetailViewProps) {
   const [history, setHistory] = useState<AuditLogEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showCancel, setShowCancel] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -101,6 +106,26 @@ export function SaleDetailView({ saleId, onBack }: SaleDetailViewProps) {
   const wasEdited = history.length > 0;
   const invoiceMargin = calculateInvoiceMargin(sale.items);
   const canEdit = canEditSale(getSession()?.role ?? "");
+  const canCancel = canCancelSale(getSession()?.role ?? "") && sale?.status === "completed";
+
+  async function confirmCancel() {
+    if (!sale || !cancelReason.trim()) return;
+    setCancelling(true);
+    setCancelError("");
+    try {
+      await cancelSale(sale.id, { reason: cancelReason.trim() });
+      setShowCancel(false);
+      setCancelReason("");
+      // Straight back to the list: the invoice no longer belongs in it, and
+      // leaving the cashier staring at a voided document invites a second
+      // attempt at voiding it.
+      onBack();
+    } catch (error) {
+      setCancelError(getErrorMessage(error, t));
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   return (
     <main className="main-content">
@@ -112,6 +137,11 @@ export function SaleDetailView({ saleId, onBack }: SaleDetailViewProps) {
           {canEdit && (
             <button className="secondary-button" onClick={() => setShowEdit(true)}>
               <Pencil size={16} /> {t("editInvoice")}
+            </button>
+          )}
+          {canCancel && (
+            <button className="secondary-button danger-button" onClick={() => setShowCancel(true)}>
+              <Ban size={16} /> {t("cancelInvoice")}
             </button>
           )}
           <button className="primary-button" onClick={() => window.print()}>
@@ -274,6 +304,47 @@ export function SaleDetailView({ saleId, onBack }: SaleDetailViewProps) {
           </div>
         )}
       </div>
+
+      {showCancel && (
+        <Modal onClose={() => setShowCancel(false)}>
+          {/* Modal closes on a backdrop mousedown, so content has to stop it
+              bubbling — otherwise pressing the confirm button dismisses the
+              dialog before the click ever lands on it. Same guard every
+              other caller of Modal uses. */}
+          <div
+            className="party-form"
+            style={{ width: "min(460px, 100%)" }}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="panel-heading">
+              <h2>{t("cancelInvoice")}</h2>
+            </div>
+            <p className="muted-text">{t("cancelInvoiceWarning")}</p>
+            <label className="field">
+              <span>{t("cancelReason")}</span>
+              <input
+                value={cancelReason}
+                onChange={(event) => setCancelReason(event.target.value)}
+                placeholder={t("cancelReasonPlaceholder")}
+                autoFocus
+              />
+            </label>
+            {cancelError && <div className="feedback-banner error">{cancelError}</div>}
+            <div className="checkout-actions">
+              <button className="secondary-button" onClick={() => setShowCancel(false)}>
+                {t("cancel")}
+              </button>
+              <button
+                className="primary-button danger-button"
+                disabled={!cancelReason.trim() || cancelling}
+                onClick={confirmCancel}
+              >
+                {cancelling ? t("loading") : t("confirmCancelInvoice")}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {showEdit && (
         <SaleEditForm

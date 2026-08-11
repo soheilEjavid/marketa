@@ -395,6 +395,23 @@ export async function getSales(): Promise<Sale[]> {
   return request<Sale[]>(`${apiBaseUrl}/sales`);
 }
 
+/**
+ * Void a completed invoice. Deliberately not a DELETE: the row and its
+ * number survive for the audit trail, and the backend reverses the sale —
+ * stock back, revenue and profit undone, the customer credited, the money
+ * refunded. Every report filters on completed sales, so from the shop's
+ * side the invoice is simply gone.
+ */
+export async function cancelSale(
+  saleId: number,
+  body: { reason: string; refund_method?: "cash" | "card" | "card_to_card" | "check" },
+): Promise<Sale> {
+  return request<Sale>(`${apiBaseUrl}/sales/${saleId}/cancel`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 export async function getSale(saleId: number): Promise<Sale> {
   return request<Sale>(`${apiBaseUrl}/sales/${saleId}`);
 }
@@ -502,6 +519,10 @@ export type InvoiceListParams = {
   sort?: "date_desc" | "date_asc";
   offset?: number;
   limit?: number;
+  /** Voided invoices are hidden by default; the backend only honours this
+   *  for admin/manager, so asking as a cashier simply returns the usual
+   *  list rather than an error. */
+  includeCancelled?: boolean;
 };
 
 async function requestPaged<T>(url: string, params: InvoiceListParams): Promise<PagedResult<T>> {
@@ -510,6 +531,7 @@ async function requestPaged<T>(url: string, params: InvoiceListParams): Promise<
   if (params.sort) query.set("sort", params.sort);
   if (params.offset) query.set("offset", String(params.offset));
   if (params.limit) query.set("limit", String(params.limit));
+  if (params.includeCancelled) query.set("include_cancelled", "true");
   const suffix = query.toString() ? `?${query.toString()}` : "";
   const response = await rawFetch(`${url}${suffix}`);
   const items = (await response.json()) as T[];

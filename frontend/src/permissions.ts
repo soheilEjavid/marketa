@@ -17,6 +17,9 @@ function has(role: string, allowed: readonly Role[]): boolean {
 
 // sales.py: edit = admin,manager
 export const canEditSale = (role: string) => has(role, ["admin", "manager"]);
+// sales.py /{id}/cancel: admin,manager — voiding an issued invoice rewrites
+// history, so it is gated exactly like editing one.
+export const canCancelSale = (role: string) => has(role, ["admin", "manager"]);
 // purchases.py: create/edit = admin,inventory_manager,manager
 export const canManagePurchases = (role: string) => has(role, ["admin", "inventory_manager", "manager"]);
 // products.py: create/update = admin,manager

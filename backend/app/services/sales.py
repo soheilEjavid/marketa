@@ -717,10 +717,21 @@ def list_sales(
     sort: str = "date_desc",
     offset: int = 0,
     limit: int = 100,
+    include_cancelled: bool = False,
 ) -> list[Sale]:
-    # Held (DRAFT) and cancelled sales are deliberately excluded — they
-    # aren't real, finalized transactions and shouldn't appear in history.
-    query = select(Sale).where(Sale.status == DocumentStatus.COMPLETED).options(selectinload(Sale.items), selectinload(Sale.payment_lines))
+    # Held (DRAFT) sales are never listed — they aren't finalized
+    # transactions. Cancelled ones are hidden by default for the same
+    # reason, but a manager can ask for them: a voided invoice is exactly
+    # what somebody eventually wants to look at, and "it vanished" is a
+    # worse answer than showing it struck through. Reports and the
+    # dashboard still exclude them unconditionally — this is the history
+    # list only, not the books.
+    statuses = (
+        [DocumentStatus.COMPLETED, DocumentStatus.CANCELLED]
+        if include_cancelled
+        else [DocumentStatus.COMPLETED]
+    )
+    query = select(Sale).where(Sale.status.in_(statuses)).options(selectinload(Sale.items), selectinload(Sale.payment_lines))
     if search:
         pattern = f"%{search.strip()}%"
         query = query.outerjoin(Customer, Sale.customer_id == Customer.id).where(
@@ -730,10 +741,15 @@ def list_sales(
     return list(database.scalars(query.offset(offset).limit(limit)))
 
 
-def count_sales(database: Session, *, search: str | None = None) -> int:
+def count_sales(database: Session, *, search: str | None = None, include_cancelled: bool = False) -> int:
     from sqlalchemy import func
 
-    query = select(func.count(Sale.id)).select_from(Sale).where(Sale.status == DocumentStatus.COMPLETED)
+    statuses = (
+        [DocumentStatus.COMPLETED, DocumentStatus.CANCELLED]
+        if include_cancelled
+        else [DocumentStatus.COMPLETED]
+    )
+    query = select(func.count(Sale.id)).select_from(Sale).where(Sale.status.in_(statuses))
     if search:
         pattern = f"%{search.strip()}%"
         query = query.outerjoin(Customer, Sale.customer_id == Customer.id).where(

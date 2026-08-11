@@ -3488,3 +3488,21 @@ select:focus, input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px r
     transition: outline-color 120ms ease;
   }
 }
+
+/* ── A voided invoice in the history list ─────────────────────────────────
+   Struck through and dimmed rather than removed: a manager looking for the
+   invoice that "disappeared" needs to find it and see at a glance that it
+   was voided on purpose. Reports and the dashboard still exclude it — this
+   is the history list only. */
+.invoice-history-row.is-cancelled { opacity: 0.62; }
+.invoice-history-row.is-cancelled strong { text-decoration: line-through; }
+
+.cancelled-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.cancelled-badge.inline { margin-inline-start: 6px; }

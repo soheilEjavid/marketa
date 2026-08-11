@@ -283,6 +283,80 @@ def return_sale_items(
     return sale
 
 
+def _tender_to_refund(database: Session, sale: Sale) -> PaymentMethod:
+    """Give the money back the way it came in.
+
+    This matters beyond politeness. shifts.py::close_shift subtracts cash
+    refunds from the expected till but ignores card ones, because card money
+    never passed through the drawer. Refunding a card sale in cash therefore
+    invents a shortage of exactly the invoice amount at the end of the
+    shift — the same phantom this app has already been bitten by twice.
+
+    Picks whichever real tender paid for most of the invoice; falls back to
+    cash for a sale with no payment lines at all, where nothing was
+    collected and the refund is zero anyway.
+    """
+    rows = database.execute(
+        select(SalePaymentLine.method, func.sum(SalePaymentLine.amount))
+        .where(SalePaymentLine.sale_id == sale.id, SalePaymentLine.amount > 0)
+        .group_by(SalePaymentLine.method)
+        .order_by(func.sum(SalePaymentLine.amount).desc())
+    ).first()
+    return rows[0] if rows else PaymentMethod.CASH
+
+
+def cancel_sale(
+    database: Session,
+    sale: Sale,
+    *,
+    reason: str,
+    refund_method: PaymentMethod | str | None = None,
+) -> Sale:
+    """Void a completed invoice that should never have been rung up.
+
+    Deliberately not a DELETE. An invoice that was issued has to keep its
+    row and its number: the number is on a piece of paper in somebody's bag,
+    the audit log points at this id, and a hole in the sequence is exactly
+    what a shop cannot explain to an inspector. Reusing a number later would
+    be worse still.
+
+    What the shopkeeper means by "delete" is that it stops counting, and
+    cancelling gives them that in full — every report, the dashboard and the
+    sales history filter on COMPLETED, so a cancelled invoice drops out of
+    revenue, profit, the payment-method breakdown and the list itself.
+
+    Mechanically this is a return of everything on the invoice, which is why
+    it delegates rather than reimplementing: that path already reverses the
+    revenue, the cost of goods, the customer's balance, the money and the
+    loyalty points, puts the stock back, and marks the sale CANCELLED once
+    nothing is left on it. A second implementation of that would be a second
+    thing to get wrong.
+    """
+    if sale.status == DocumentStatus.CANCELLED:
+        raise AdjustmentError(f"Sale {sale.id} is already cancelled")
+    if sale.status != DocumentStatus.COMPLETED:
+        # A held draft never touched stock or money; discarding one is
+        # sales.cancel_held_sale's job, not this.
+        raise AdjustmentError(
+            f"Only a completed invoice can be cancelled (status: {sale.status})"
+        )
+    if not reason or not reason.strip():
+        raise AdjustmentError("A reason is required to cancel an invoice")
+
+    items = [
+        {"product_id": line.product_id, "quantity": line.quantity}
+        for line in sale.items
+        if line.quantity > 0
+    ]
+    if not items:
+        raise AdjustmentError("This invoice has nothing left to cancel")
+
+    return return_sale_items(
+        database, sale.id, items,
+        refund_method=refund_method or _tender_to_refund(database, sale),
+    )
+
+
 def return_purchase_items(
     database: Session,
     purchase_id: int,
