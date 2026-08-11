@@ -152,6 +152,32 @@ directly rather than going through HTTP. Financial tests hand-compute the
 expected figure (see `test_inflation_rate.py`, `test_returns_accounting.py`) —
 match that when adding accounting logic; asserting "it runs" is not a test here.
 
+### How the payment reconciliation is checked, and why not per invoice
+
+An invoice settled from a customer's balance carries no payment row of its
+own. `financials._settle_oldest_first` raises its `paid_amount`, while the
+payment row itself stays unallocated (`sale_id` null) because
+`shifts.py::close_shift` keys on exactly that to count walk-in cash. So the
+obvious check — every invoice's `paid_amount` equals the sum of its own
+payment rows — reports correct invoices as broken.
+
+Moving to a party-level sum removes the noise but loses sensitivity: one
+invoice 100,000 over and another 100,000 under cancel out. So the audit
+checks both, using the properties the allocation must have rather than
+demanding a row per invoice:
+
+1. `Σ invoice paid_amount == Σ receipts`, per party.
+2. No invoice's `paid_amount` is below the sum of its own payment rows —
+   what it drew from the unallocated pool cannot be negative. An offsetting
+   pair always puts one side under, so this catches what (1) cannot.
+3. What every invoice drew from the pool equals what was paid into it.
+4. Nothing newer is settled from the pool while something older is open,
+   since allocation is oldest-first.
+
+Verified by tampering rather than by argument: two offsetting edits on one
+customer left (1) green and were caught by (2) and (4), naming both
+invoices.
+
 ### Cost is a weighted average, and the tier never changes it
 
 `Product.purchase_price` is the blended cost of what is on the shelf, not
