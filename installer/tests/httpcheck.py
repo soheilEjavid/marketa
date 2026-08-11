@@ -15,6 +15,9 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+# The Windows console is cp1252 by default and these checks print Persian.
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
 PASSWORD = sys.argv[2] if len(sys.argv) > 2 else None
 BASE = f"http://127.0.0.1:{PORT}"
@@ -104,6 +107,15 @@ def client_route_gets_the_shell():
     return "200 html"
 
 
+def the_icon_is_served():
+    """Chromium takes the app window's taskbar icon from this."""
+    status, headers, body = fetch("/favicon.svg")
+    assert status == 200, status
+    assert "svg" in headers.get("content-type", ""), headers
+    assert "<svg" in body, body[:120]
+    return f"200 {headers.get('content-type')}"
+
+
 def hashed_asset_is_served():
     index = Path("app") / "static" / "index.html"
     match = re.search(r'src="(/assets/[^"]+\.js)"', index.read_text(encoding="utf-8"))
@@ -141,6 +153,7 @@ check("GET / serves the interface", root_serves_interface)
 check("GET /api/v1/salez is a JSON 404, not the HTML shell", unknown_api_path_is_json_404)
 check("GET /api/v2/sales is a 404", unknown_api_version_is_404)
 check("GET /reports/margin returns the SPA shell", client_route_gets_the_shell)
+check("GET /favicon.svg (the app window's icon)", the_icon_is_served)
 check("GET the hashed JS bundle", hashed_asset_is_served)
 check("POST /api/v1/auth/login with a wrong password", wrong_password_is_rejected)
 if PASSWORD:

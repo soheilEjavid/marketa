@@ -90,16 +90,59 @@ The server listens on loopback only. One shop, one till, one machine — there
 is no reason for the whole ledger to be reachable from the neighbourhood's
 wifi with only a login page in front of it.
 
+## The window
+
+MARKETA opens as a standalone window — no address bar, no tabs — using
+Chromium's `--app=` mode through the Edge that ships with Windows 10/11.
+That costs the payload nothing: no second runtime, no Node build step.
+Chrome is the fallback; if neither exists the default browser is used
+instead. `appwindow.py` finds the browser through the `App Paths` registry
+key rather than a hardcoded directory, because on a real machine Edge sits
+under `Program Files (x86)` while Chrome sits under `Program Files`.
+
+Three things about it are load-bearing:
+
+- **A dedicated `--user-data-dir`.** Without one, launching `msedge --app`
+  while Edge is already running hands the window to the existing browser and
+  the process we spawned exits immediately with status 0. Anything waiting on
+  it to learn when the window closed would conclude the shopkeeper had closed
+  it a second after startup. Measured: seven Edge processes running, our
+  process gone within six seconds.
+- **`--disable-features=Translate,…`.** Edge otherwise floats a "Translate
+  page from Persian?" bubble over the till every time it opens. One stray
+  click and the shop is running a machine-translated cash register.
+- **A favicon.** Chromium takes the window and taskbar icon from the page's
+  icon. A custom `.lnk` icon does not change it — the taskbar button belongs
+  to the running window, not to whatever launched it. Hence
+  `frontend/public/favicon.svg`, which also gives the browser tab an icon in
+  ordinary development.
+
+**Closing the window stops the server.** The package is built so the shop
+starts one thing, so it should stop one thing; a server left running behind a
+closed window is invisible and would need a second shortcut to be rid of. The
+shutdown is uvicorn's graceful one, so a sale that is mid-request finishes.
+The exception is the default-browser fallback: a tab closing is not something
+we can observe, so there the server stays up and "Stop MARKETA" is the way
+out.
+
+**Clicking the shortcut twice gives one window** — the second launch raises
+the existing one rather than opening another.
+
 ## Self-tests, on the machine that matters
 
 `installer/tests/` ships inside the payload, so any installed copy can be
 checked from the shop's own machine. From the install directory:
 
 ```bat
+chcp 65001
 python\python.exe tests\selftest.py          :: runtime, wheels, tzdata, bcrypt
 python\python.exe tests\httpcheck.py 8000    :: HTTP surface of a running server
 python\python.exe tests\edgecheck.py         :: PID reuse, stale PIDs, port conflicts
+python\python.exe tests\windowcheck.py       :: the app window, start to close
 ```
+
+(`chcp 65001` because the console is cp1252 by default and these print
+Persian.)
 
 They exist because a Linux dry run cannot see the things that actually broke.
 All three of these were found by running them on real Windows:

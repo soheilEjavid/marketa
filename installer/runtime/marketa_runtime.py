@@ -27,9 +27,12 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parent
 
 PID_FILE_NAME = "marketa.pid"
+WINDOW_PID_FILE_NAME = "marketa-window.pid"
 
 # The images this install's server can legitimately be running under.
 SERVER_IMAGES = {"python.exe", "pythonw.exe"}
+# ...and its window.
+WINDOW_IMAGES = {"msedge.exe", "chrome.exe"}
 
 _DEFAULT_DATA_DIR = Path(r"C:\ProgramData\MARKETA")
 
@@ -102,6 +105,11 @@ def pid_file() -> Path:
     return data_dir() / PID_FILE_NAME
 
 
+def window_pid_file() -> Path:
+    """Where the running server records its app window's process id."""
+    return data_dir() / WINDOW_PID_FILE_NAME
+
+
 def parse_tasklist_image(stdout: str) -> str | None:
     """The image name out of `tasklist /NH /FO CSV`, or None for no match.
 
@@ -130,6 +138,20 @@ def process_image_name(pid: int) -> str | None:
     return parse_tasklist_image(completed.stdout)
 
 
+def _live_pid(recorded: Path, images: set[str]) -> int | None:
+    """The PID in `recorded`, if a process of the right kind is running it."""
+    if not recorded.is_file():
+        return None
+    try:
+        pid = int(recorded.read_text(encoding="utf-8").strip())
+    except ValueError:
+        return None
+    image = process_image_name(pid)
+    if image is None or image.lower() not in images:
+        return None
+    return pid
+
+
 def running_server_pid() -> int | None:
     """The PID of *this install's* server, or None if it is not running.
 
@@ -141,17 +163,12 @@ def running_server_pid() -> int | None:
     shown somebody else's data. Windows also recycles PIDs, so a live
     process under our recorded number still has to look like ours.
     """
-    recorded = pid_file()
-    if not recorded.is_file():
-        return None
-    try:
-        pid = int(recorded.read_text(encoding="utf-8").strip())
-    except ValueError:
-        return None
-    image = process_image_name(pid)
-    if image is None or image.lower() not in SERVER_IMAGES:
-        return None
-    return pid
+    return _live_pid(pid_file(), SERVER_IMAGES)
+
+
+def running_window_pid() -> int | None:
+    """The PID of this install's app window, or None if it is closed."""
+    return _live_pid(window_pid_file(), WINDOW_IMAGES)
 
 
 def configured_port() -> int:

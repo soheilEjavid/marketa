@@ -97,9 +97,15 @@ Page custom AdminPageCreate AdminPageLeave
 
 !insertmacro MUI_PAGE_INSTFILES
 
-; Through wscript.exe deliberately: the finish page runs its target with
-; CreateProcess, which cannot execute a .vbs on its own.
-!define MUI_FINISHPAGE_RUN "$SYSDIR\wscript.exe"
+; Through explorer.exe, and not directly, for one important reason: this
+; installer runs elevated, and anything it launches inherits that. A server
+; started that way runs as administrator, which it has no need to be — and
+; the un-elevated "Stop MARKETA" shortcut then cannot kill it, so the shop
+; is left with a server it can only be rid of by rebooting. explorer.exe is
+; already running as the logged-in user, so handing the shortcut to it drops
+; the privileges back to that user. explorer also uses ShellExecute
+; semantics, so unlike Exec it can start a .vbs directly.
+!define MUI_FINISHPAGE_RUN "$WINDIR\explorer.exe"
 ; $\" and not a bare quote: MUI substitutes this straight into an Exec
 ; string, where an unescaped quote ends the argument early and Exec then
 ; complains about being handed two parameters.
