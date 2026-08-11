@@ -152,6 +152,31 @@ directly rather than going through HTTP. Financial tests hand-compute the
 expected figure (see `test_inflation_rate.py`, `test_returns_accounting.py`) —
 match that when adding accounting logic; asserting "it runs" is not a test here.
 
+### Translation keys that come from backend enums stay snake_case
+
+The backend serializes `StrEnum` *values*, which are snake_case:
+`card_to_card`, `inventory_manager`, `adjustment`. Wherever the frontend
+translates one of those directly — `t(sale.payment_method)`,
+`t(user.role)`, `t(transaction.transaction_type)` — the dictionary key has
+to match that value exactly. Do not tidy such a key into camelCase.
+
+That mismatch is silent by construction. `card_to_card` had its label filed
+under `cardToCard`, so every receipt printed a blank where the tender
+should have been, for as long as the tender existed: no error, no warning,
+nothing on screen to notice.
+
+Two guards now exist. `t()` falls back to the key itself rather than an
+empty string, so the next missing label appears as `card_to_card` in the
+interface — ugly, findable, and it names the key to add. And where a value
+is mapped rather than translated directly, the map is typed as a full
+`Record<Enum, string>` (see `lib/paymentStatus.ts`) so adding a value fails
+the build instead of mislabelling a row.
+
+A sweep of all eight backend enums against both dictionaries (2026-08-12)
+found `card_to_card` and `loyalty` as the only live gaps. The rest are
+rendered through explicit maps or comparisons rather than passed to `t()`.
+Worth re-running the sweep if a new enum value is added.
+
 ### How the payment reconciliation is checked, and why not per invoice
 
 An invoice settled from a customer's balance carries no payment row of its

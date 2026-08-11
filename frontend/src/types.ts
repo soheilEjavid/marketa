@@ -1,3 +1,6 @@
+/** Mirrors the backend PaymentStatus enum — its serialized values. */
+export type PaymentStatus = "paid" | "partial" | "unpaid";
+
 export type Product = {
   id: number;
   barcode: string | null;
@@ -353,7 +356,7 @@ export type Sale = {
   paid_amount: string;
   remaining_amount: string;
   payment_method: "cash" | "card" | "credit" | "check" | "mixed" | "loyalty";
-  payment_status: "paid" | "partial" | "unpaid";
+  payment_status: PaymentStatus;
   status: "draft" | "completed" | "cancelled";
   notes: string | null;
   created_at: string;
@@ -506,7 +509,7 @@ export type Purchase = {
   total: string;
   paid_amount: string;
   remaining_amount: string;
-  payment_status: "paid" | "partial" | "unpaid";
+  payment_status: PaymentStatus;
   status: "draft" | "completed" | "cancelled";
   notes: string | null;
   created_at: string;

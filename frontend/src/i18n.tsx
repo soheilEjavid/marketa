@@ -1406,7 +1406,18 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       currency,
       setLanguage,
       setCurrency,
-      t: (key) => messages[language][key],
+      // Falls back to the key itself, never to an empty string. A missing
+      // label used to render as a blank space — card_to_card sat unlabelled
+      // on receipts for as long as that tender existed, because the label
+      // was filed under the camelCase `cardToCard` while the receipt
+      // translates the backend's own snake_case value. Nothing errored,
+      // nothing warned, and there was nothing on screen to notice.
+      //
+      // Returning the key turns that whole class of bug from silent into
+      // visible on first sight: the next one shows up as "card_to_card" in
+      // the interface, which at least tells a reader what it meant to say
+      // and tells us exactly which key to add.
+      t: (key) => messages[language][key] ?? key,
       number: (value) => value.toLocaleString(locale),
       money: (value) => {
         // The argument is always toman; the unit conversion happens here and

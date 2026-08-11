@@ -11,6 +11,7 @@ import {
   getLoyaltyTransactions,
 } from "../api";
 import { useI18n } from "../i18n";
+import { paymentStatusLabel } from "../lib/paymentStatus";
 import { canAdjustLoyaltyPoints } from "../permissions";
 import { getSession } from "../session";
 import type { CustomerLedger, LoyaltyBalance, LoyaltyRewardSuggestion, LoyaltyTransaction } from "../types";
@@ -429,7 +430,7 @@ export function CustomerDetail({ customerId, customerName, onBack }: CustomerDet
                       alignment with the 6-column header above. */}
                   {entry.payment_status && entry.payment_status !== "paid" && (
                     <span className={`credit-status-badge ${entry.payment_status}`}>
-                      {t(entry.payment_status === "unpaid" ? "unpaidStatus" : "partialStatus")}
+                      {t(paymentStatusLabel(entry.payment_status))}
                     </span>
                   )}
                 </span>

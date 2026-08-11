@@ -3,6 +3,7 @@ import { ArrowLeft, DollarSign } from "lucide-react";
 
 import { createSupplierPayment, getErrorMessage, getSupplierLedger } from "../api";
 import { useI18n } from "../i18n";
+import { paymentStatusLabel } from "../lib/paymentStatus";
 import type { SupplierLedger } from "../types";
 import { PurchaseDetailView } from "../components/PurchaseDetailView";
 import { AmountInput } from "../components/AmountInput";
@@ -189,7 +190,7 @@ export function SupplierDetail({ supplierId, supplierName, onBack }: SupplierDet
                   {t(entry.entry_type === "purchase" ? "purchase" : "payment")}
                   {entry.payment_status && entry.payment_status !== "paid" && (
                     <span className={`credit-status-badge ${entry.payment_status}`}>
-                      {t(entry.payment_status === "unpaid" ? "unpaidStatus" : "partialStatus")}
+                      {t(paymentStatusLabel(entry.payment_status))}
                     </span>
                   )}
                 </span>
