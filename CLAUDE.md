@@ -323,3 +323,15 @@ figure behind another one's silence.
   `app/seed.py` is deliberately not in the payload (the build asserts this),
   and the built frontend is served by the API process itself via
   `app/web.py`, whose SPA catch-all must stay the last route registered.
+- **When two observations contradict each other, one of your assumptions is
+  wrong — that is almost always cheaper than whatever mechanism would
+  explain both.** A theory inventive enough to reconcile the evidence is the
+  signal to stop and test a premise, not the answer. This was learned here
+  the expensive way: a commit appeared to predate work whose files it
+  contained, and the conclusion drawn and reported was "the history was
+  rewritten and the commits squashed". `git reflog` showed a plain linear
+  history the whole time; the false assumption was mundane. For git in
+  particular, `reflog`, `cat-file -t <sha>`, `merge-base --is-ancestor
+  <sha> HEAD`, `log --merges`/`--grep='^Revert'`, and whether a
+  remote-tracking ref exists at all settle these questions outright — run
+  them before describing history as lost, reset or rewritten.
